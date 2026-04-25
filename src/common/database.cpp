@@ -18,7 +18,7 @@ ParseResult Database::load(const std::string& xml_path){
             ERROR("解析失败: result=" << parse_result_name(ret) << ", path=" << xml_path);
             return ret;
         }
-        rebuild_indices();
+        rebuild_key_index();
         if((ret=ser.save(cache_path,string_pool_,records_))!=ParseResult::OK){
             ERROR("保存缓存失败: result=" << parse_result_name(ret) << ", cache=" << cache_path);
             return ret;
@@ -30,20 +30,54 @@ ParseResult Database::load(const std::string& xml_path){
             ERROR("load失败: result=" << parse_result_name(ret) << ", cache=" << cache_path);
             return ret;
         }
-        rebuild_indices();
+        rebuild_key_index();
     }
     return ParseResult::OK;
 }
 
-void Database::rebuild_indices(){
-    ProcessReporter reporter("建立索引", records_.size());
+void Database::rebuild_key_index(){
+    key_index_.clear();
+    clear_lazy_indices();
+
+    ProcessReporter reporter("建立key索引", records_.size());
     for(size_t i=0;i<records_.size();i++){
         key_index_.insert({records_[i].key(),i});
+        reporter.report(i + 1);
+    }
+}
+
+void Database::clear_lazy_indices(){
+    author_index_.clear();
+    year_index_.clear();
+    author_index_ready_ = false;
+    year_index_ready_ = false;
+}
+
+void Database::ensure_author_index() const{
+    if(author_index_ready_)
+        return;
+
+    author_index_.clear();
+    ProcessReporter reporter("建立作者索引", records_.size());
+    for(size_t i=0;i<records_.size();i++){
         for (const std::string& a : records_[i].authors())
             author_index_[a].push_back(i);
+        reporter.report(i + 1);
+    }
+    author_index_ready_ = true;
+}
+
+void Database::ensure_year_index() const{
+    if(year_index_ready_)
+        return;
+
+    year_index_.clear();
+    ProcessReporter reporter("建立年份索引", records_.size());
+    for(size_t i=0;i<records_.size();i++){
         year_index_[records_[i].year()].push_back(i);
         reporter.report(i + 1);
     }
+    year_index_ready_ = true;
 }
 
 const std::vector<XmlValue>& Database::all() const{return records_;}
@@ -58,6 +92,8 @@ const XmlValue* Database::find_by_key(const std::string &key) const{
 
 //精确查询
 std::vector<const XmlValue *> Database::find_by_author(const std::string &author) const{
+    ensure_author_index();
+
     auto it=author_index_.find(author);
     if(it==author_index_.end())
         return {};
@@ -68,7 +104,9 @@ std::vector<const XmlValue *> Database::find_by_author(const std::string &author
     return result;
 }
 
-std::vector<const XmlValue *> Database::find_by_year(std::string& year) const{
+std::vector<const XmlValue *> Database::find_by_year(const std::string& year) const{
+    ensure_year_index();
+
     auto it=year_index_.find(year);
     if(it==year_index_.end()){
         return {};

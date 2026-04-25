@@ -113,6 +113,7 @@ void XmlValue::addEe(uint32_t id){
     ee_ids_.push_back(id);
 }
 
+//测试使用
 void XmlValue::print_val() const {
     std::cout << "mdate: " << mdate() << '\n'
 	    << "key: " << key() << '\n';

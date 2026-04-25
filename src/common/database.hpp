@@ -16,12 +16,17 @@ class Database{
 private:
     std::vector<XmlValue> records_;
     StringPool string_pool_;
-
+    
     std::unordered_map<std::string, size_t>  key_index_;
-    std::unordered_map<std::string, std::vector<size_t>> author_index_;
-    std::unordered_map<std::string, std::vector<size_t>> year_index_;
+    mutable std::unordered_map<std::string, std::vector<size_t>> author_index_;
+    mutable std::unordered_map<std::string, std::vector<size_t>> year_index_;
+    mutable bool author_index_ready_ = false;
+    mutable bool year_index_ready_ = false;
 
-    void rebuild_indices();
+    void rebuild_key_index();
+    void clear_lazy_indices();
+    void ensure_author_index() const;
+    void ensure_year_index() const;
 
 public:
     Database() =default;
@@ -37,7 +42,7 @@ public:
     //精确查询
     const XmlValue* find_by_key(const std::string& key) const;
     std::vector<const XmlValue*> find_by_author(const std::string& author) const;
-    std::vector<const XmlValue*> find_by_year(std::string& year) const;
+    std::vector<const XmlValue*> find_by_year(const std::string& year) const;
 
     //模糊查询
     std::vector<const XmlValue*> find_by_title_keyword(const std::string& keyword);

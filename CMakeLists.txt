@@ -48,10 +48,27 @@ target_include_directories(common PUBLIC
 )
 
 # ============================================================================
+# 分析库: analysis
+# ============================================================================
+set(ANALYSIS_SOURCES
+    src/analysis/statistics_analyzer.cpp
+)
+
+set(ANALYSIS_HEADERS
+    src/analysis/statistics_analyzer.hpp
+)
+
+add_library(analysis STATIC ${ANALYSIS_SOURCES} ${ANALYSIS_HEADERS})
+target_include_directories(analysis PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(analysis PUBLIC common)
+
+# ============================================================================
 # 可执行文件: sci_lib (测试入口)
 # ============================================================================
 add_executable(sci_lib test/test1.cpp)
-target_link_libraries(sci_lib PRIVATE common)
+target_link_libraries(sci_lib PRIVATE common analysis)
 
 # ============================================================================
 # 测试 (可选)
