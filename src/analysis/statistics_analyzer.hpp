@@ -22,7 +22,7 @@ using YearKeywordTop = std::unordered_map<std::string, std::vector<KeywordStat>>
 class StatisticsAnalyzer {
 private:
     static bool is_missing_string(const std::string& value);
-    static std::vector<std::string> split_title_keywords(const std::string& title);
+    static void count_title_keywords(const std::string& title, std::unordered_map<std::string, size_t>& counts);
     static bool is_stop_word(const std::string& word);
 public:
     std::vector<AuthorStat> top_authors(const Database& db, size_t limit = 100) const;//返回结果按照出现次数size降序排列

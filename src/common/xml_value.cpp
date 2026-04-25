@@ -30,6 +30,16 @@ std::vector<std::string> XmlValue::authors() const
     return result;
 }
 
+size_t XmlValue::author_count() const
+{
+    return author_ids_.size();
+}
+
+const std::string& XmlValue::author_at(size_t index) const
+{
+    return get_string_or_missing(db_, author_ids_.at(index));
+}
+
 const std::string &XmlValue::title() const
 {
     return get_string_or_missing(db_, title_id_);

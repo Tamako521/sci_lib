@@ -12,34 +12,26 @@ bool StatisticsAnalyzer::is_missing_string(const std::string &value){
     return value==MISSING_STRING;
 }
 
-std::vector<std::string> StatisticsAnalyzer::split_title_keywords(const std::string &title){
-    std::string str=title;
-    for(size_t i=0;i<str.size();i++){
-        unsigned char ch = static_cast<unsigned char>(str[i]);
-        if(std::isalpha(ch)) str[i]=static_cast<char>(std::tolower(ch));
-        else str[i]=' ';
-    }
-    std::vector<std::string> keywords;
+void StatisticsAnalyzer::count_title_keywords(const std::string &title, std::unordered_map<std::string, size_t>& counts){
+    std::string word;
+    word.reserve(32);
 
-    bool isword=false;
-    size_t start=0;
-    for(size_t i=0;i<str.size();i++){
-        unsigned char ch = static_cast<unsigned char>(str[i]);
-        if((!isword)&&std::isalpha(ch)){
-           isword=true;
-           start=i;
+    for(char raw_ch:title){
+        unsigned char ch = static_cast<unsigned char>(raw_ch);
+        if(std::isalnum(ch)){
+            word.push_back(static_cast<char>(std::tolower(ch)));
         }
-        if(isword&&(!std::isalpha(ch))){
-            std::string s=str.substr(start,i-start);
-            if(!is_stop_word(s)) keywords.push_back(s);
-            isword=false;
+        else if(!word.empty()){
+            if(!is_stop_word(word)){
+                counts[word]++;
+            }
+            word.clear();
         }
     }
-    if(isword){
-        std::string s=str.substr(start);
-        if(!is_stop_word(s)) keywords.push_back(s);
+
+    if(!word.empty()&&!is_stop_word(word)){
+        counts[word]++;
     }
-    return keywords;
 }
 
 bool StatisticsAnalyzer::is_stop_word(const std::string &word){
@@ -55,7 +47,10 @@ bool StatisticsAnalyzer::is_stop_word(const std::string &word){
         "using", "use", "used",
         "based", "via"
     };
-    return (word.size() < 2||(stop_words.find(word)!=stop_words.end()));
+    const bool is_number = std::all_of(word.begin(), word.end(), [](unsigned char ch) {
+        return std::isdigit(ch);
+    });
+    return (word.size() < 2||is_number||(stop_words.find(word)!=stop_words.end()));
 }
 
 
@@ -67,9 +62,10 @@ std::vector<AuthorStat> StatisticsAnalyzer::top_authors(const Database &db, size
     //计数
     std::unordered_map<std::string,size_t>author_counts;
     const std::vector<XmlValue>& records=db.all();
+    author_counts.reserve(records.size());
     for(const XmlValue& val:records){
-        std::vector<std::string> authors=val.authors();
-        for(const std::string& author:authors){
+        for(size_t i=0;i<val.author_count();i++){
+            const std::string& author=val.author_at(i);
             if(!is_missing_string(author)){
                 author_counts[author]++;
             }
@@ -115,16 +111,14 @@ YearKeywordTop StatisticsAnalyzer::yearly_hot_keywords(const Database &db, size_
     //遍历
     std::unordered_map<std::string,std::unordered_map<std::string,size_t>> keyword_counts;
     const std::vector<XmlValue>& records=db.all();
+    keyword_counts.reserve(256);
     for(const XmlValue& val:records){
-        std::string year=val.year();
+        const std::string& year=val.year();
         if(is_missing_string(year)) continue;
-        std::string title=val.title();
+        const std::string& title=val.title();
         if(is_missing_string(title)) continue;
 
-        std::vector<std::string>keywords=split_title_keywords(title);
-        for(const std::string& keyword:keywords){
-            keyword_counts[year][keyword]++;
-        }
+        count_title_keywords(title, keyword_counts[year]);
     }
 
     YearKeywordTop result;

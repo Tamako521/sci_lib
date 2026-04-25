@@ -1,5 +1,6 @@
 #ifndef XML_VALUE_HPP
 #define XML_VALUE_HPP
+#include <cstddef>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -35,6 +36,8 @@ public:
     const std::string& mdate()   const;
     const std::string& key()     const;
     std::vector<std::string> authors() const;  // 一条 article 可能有多位作者
+    size_t author_count() const;
+    const std::string& author_at(size_t index) const;
     const std::string& title()   const;
     const std::string& journal() const;
     const std::string& volume()  const;
