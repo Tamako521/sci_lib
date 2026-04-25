@@ -74,3 +74,6 @@ MinSizeRel/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Task of member C
+design.md
