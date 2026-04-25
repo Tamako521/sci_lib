@@ -55,14 +55,22 @@ const std::string &XmlValue::year() const
     return get_string_or_missing(db_, year_id_);
 }
 
-const std::string &XmlValue::cdrom() const
+std::vector<std::string> XmlValue::cdroms() const
 {
-    return get_string_or_missing(db_, cdrom_id_);
+    std::vector<std::string> result;
+    result.reserve(cdrom_ids_.size());
+    for (uint32_t id : cdrom_ids_)
+        result.push_back(get_string_or_missing(db_, id));
+    return result;
 }
 
-const std::string &XmlValue::ee() const
+std::vector<std::string> XmlValue::ees() const
 {
-    return get_string_or_missing(db_, ee_id_);
+    std::vector<std::string> result;
+    result.reserve(ee_ids_.size());
+    for (uint32_t id : ee_ids_)
+        result.push_back(get_string_or_missing(db_, id));
+    return result;
 }
 
 void XmlValue::setMdate(uint32_t id){
@@ -97,29 +105,39 @@ void XmlValue::setYear(uint32_t id){
     year_id_ = id;
 }
 
-void XmlValue::setCdrom(uint32_t id){
-    cdrom_id_ = id;
+void XmlValue::addCdrom(uint32_t id){
+    cdrom_ids_.push_back(id);
 }
 
-void XmlValue::setEe(uint32_t id){
-    ee_id_ = id;
+void XmlValue::addEe(uint32_t id){
+    ee_ids_.push_back(id);
 }
 
 void XmlValue::print_val() const {
     std::cout << "mdate: " << mdate() << '\n'
 	    << "key: " << key() << '\n';
     std::vector<std::string> author = authors();
-        std::cout << "author: ";
-    for (int j = 0; j < author.size(); j++) {
-        std::cout << author[j] << "，";
+    std::cout << "author: ";
+    for (const std::string& item : author) {
+        std::cout << item << "，";
     }
     std::cout << std::endl;
     std::cout << "title: " << title()   << '\n'
 	    << "journal: "	   << journal() << '\n'
 	    << "volume: "	   << volume()  << '\n'
 	    << "month: "	   << month()   << '\n'
-	    << "year: "		   << year()    << '\n'
-	    << "cdrom: "	   << cdrom()   << '\n'
-	    << "ee: "		   << ee()	   << '\n';
+	    << "year: "		   << year()    << '\n';
+    std::vector<std::string> cdrom = cdroms();
+    std::cout << "cdrom: ";
+    for (const std::string& item : cdrom) {
+        std::cout << item << "，";
+    }
+    std::cout << std::endl;
+    std::vector<std::string> ee = ees();
+    std::cout << "ee: ";
+    for (const std::string& item : ee) {
+        std::cout << item << "，";
+    }
+    std::cout << std::endl;
     return;
 }

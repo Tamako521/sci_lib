@@ -249,8 +249,8 @@ ParseResult XmlParser::parse_article(StringPool& string_pool, XmlValue& out, con
         else if (tag_name == "volume")  out.volume_id_  = string_pool.intern(text);
         else if (tag_name == "month")   out.month_id_   = string_pool.intern(text);
         else if (tag_name == "year")    out.year_id_    = string_pool.intern(text);
-        else if (tag_name == "cdrom")   out.cdrom_id_   = string_pool.intern(text);
-        else if (tag_name == "ee")      out.ee_id_      = string_pool.intern(text);
+        else if (tag_name == "cdrom")   out.cdrom_ids_.push_back(string_pool.intern(text));
+        else if (tag_name == "ee")      out.ee_ids_.push_back(string_pool.intern(text));
         // 未知 tag 直接忽略
     }
 }

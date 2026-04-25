@@ -24,8 +24,8 @@ private:
     uint32_t volume_id_  = INVALID_ID;
     uint32_t month_id_   = INVALID_ID;
     uint32_t year_id_    = INVALID_ID;
-    uint32_t cdrom_id_   = INVALID_ID;
-    uint32_t ee_id_      = INVALID_ID;
+    std::vector<uint32_t> cdrom_ids_;
+    std::vector<uint32_t> ee_ids_;
     
     const Database* db_ = nullptr;   // 反查字符串池用
 
@@ -40,8 +40,8 @@ public:
     const std::string& volume()  const;
     const std::string& month()   const;
     const std::string& year()    const;
-    const std::string& cdrom()   const;
-    const std::string& ee()      const;
+    std::vector<std::string> cdroms() const;
+    std::vector<std::string> ees() const;
 
     //setter
     void setMdate(uint32_t id);
@@ -52,8 +52,8 @@ public:
     void setVolume(uint32_t id);
     void setMonth(uint32_t id);
     void setYear(uint32_t id);
-    void setCdrom(uint32_t id);
-    void setEe(uint32_t id);
+    void addCdrom(uint32_t id);
+    void addEe(uint32_t id);
 
     //test:输出函数
     void print_val() const;

@@ -105,11 +105,9 @@ ParseResult Serializer::read_records(std::ifstream &f, std::vector<XmlValue> &re
         value.volume_id_ = xml->volume_id_;
         value.month_id_ = xml->month_id_;
         value.year_id_ = xml->year_id_;
-        value.cdrom_id_ = xml->cdrom_id_;
-        value.ee_id_ = xml->ee_id_;
         
-        int author_size = xml->author_size;
-        for (int j = 0; j < author_size; j++) {
+        uint32_t author_size = xml->author_size;
+        for (uint32_t j = 0; j < author_size; j++) {
             uint32_t id;
             f.read(reinterpret_cast<char*>(&id), sizeof(uint32_t));
             if((ret=error_read(f))!=ParseResult::OK){
@@ -118,6 +116,28 @@ ParseResult Serializer::read_records(std::ifstream &f, std::vector<XmlValue> &re
                 return ret;
             }
             value.author_ids_.push_back(id);
+        }
+        uint32_t cdrom_size = xml->cdrom_size;
+        for (uint32_t j = 0; j < cdrom_size; j++) {
+            uint32_t id;
+            f.read(reinterpret_cast<char*>(&id), sizeof(uint32_t));
+            if((ret=error_read(f))!=ParseResult::OK){
+                ERROR("读取records失败：读取cdrom_id失败");
+            
+                return ret;
+            }
+            value.cdrom_ids_.push_back(id);
+        }
+        uint32_t ee_size = xml->ee_size;
+        for (uint32_t j = 0; j < ee_size; j++) {
+            uint32_t id;
+            f.read(reinterpret_cast<char*>(&id), sizeof(uint32_t));
+            if((ret=error_read(f))!=ParseResult::OK){
+                ERROR("读取records失败：读取ee_id失败");
+            
+                return ret;
+            }
+            value.ee_ids_.push_back(id);
         }
         value.db_ = db;
         records.push_back(value);
@@ -185,9 +205,9 @@ ParseResult Serializer::write_records(std::ofstream &f, const std::vector<XmlVal
         xml->volume_id_ = value.volume_id_;
         xml->month_id_ = value.month_id_;
         xml->year_id_ = value.year_id_;
-        xml->cdrom_id_ = value.cdrom_id_;
-        xml->ee_id_ = value.ee_id_;
         xml->author_size = static_cast<uint32_t>(value.author_ids_.size());
+        xml->cdrom_size = static_cast<uint32_t>(value.cdrom_ids_.size());
+        xml->ee_size = static_cast<uint32_t>(value.ee_ids_.size());
         
         f.write(reinterpret_cast<const char*>(xml.get()), sizeof(Xml));
 
@@ -201,6 +221,22 @@ ParseResult Serializer::write_records(std::ofstream &f, const std::vector<XmlVal
 
             if ((ret = error_write(f)) != ParseResult::OK){
                 ERROR("写入records失败：写入author_id失败");
+                return ret;
+            }
+        }
+        for (uint32_t cdrom_id : value.cdrom_ids_) {
+            f.write(reinterpret_cast<const char*>(&cdrom_id), sizeof(uint32_t));
+
+            if ((ret = error_write(f)) != ParseResult::OK){
+                ERROR("写入records失败：写入cdrom_id失败");
+                return ret;
+            }
+        }
+        for (uint32_t ee_id : value.ee_ids_) {
+            f.write(reinterpret_cast<const char*>(&ee_id), sizeof(uint32_t));
+
+            if ((ret = error_write(f)) != ParseResult::OK){
+                ERROR("写入records失败：写入ee_id失败");
                 return ret;
             }
         }

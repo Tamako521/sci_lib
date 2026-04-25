@@ -30,9 +30,9 @@ private:
         uint32_t volume_id_;
         uint32_t month_id_;
         uint32_t year_id_;
-        uint32_t cdrom_id_;
-        uint32_t ee_id_;
         uint32_t author_size;
+        uint32_t cdrom_size;
+        uint32_t ee_size;
     };
     std::unique_ptr<Xml> xml;
 

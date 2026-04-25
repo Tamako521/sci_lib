@@ -4,9 +4,12 @@
 .vscode/
 .claude/
 
+# Task of member C
+docs/design.md
+
 # Project data
 dblp.xml
-!articles.dat
+articles.dat
 
 # Build directories
 build/
@@ -75,5 +78,4 @@ MinSizeRel/
 Thumbs.db
 desktop.ini
 
-# Task of member C
-design.md
+
