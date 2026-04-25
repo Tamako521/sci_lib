@@ -1,0 +1,76 @@
+# Local assistant/tool state
+.codebuddy/
+.codex/
+.vscode/
+.claude/
+
+# Project data
+dblp.xml
+!articles.dat
+
+# Build directories
+build/
+builds/
+cmake-build-*/
+out/
+release/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+install_manifest.txt
+compile_commands.json
+
+# Visual Studio generated files
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.vcxproj.FileListAbsolute.txt
+*.opensdf
+*.sdf
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+ipch/
+x64/
+x86/
+Win32/
+Debug/
+Release/
+RelWithDebInfo/
+MinSizeRel/
+
+# C/C++ build artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+*.pdb
+*.ilk
+*.idb
+*.iobj
+*.ipdb
+*.exp
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
