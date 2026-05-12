@@ -5,7 +5,7 @@
 #include <iostream>
 #include <cstdint>
 
-const ParseResult Serializer::error_read(const std::ifstream &f) const{
+ParseResult Serializer::error_read(const std::ifstream &f) const{
     if (f.fail()) {
         if (f.eof()) {
             std::cerr << "文件过早结束 (EOF)" << std::endl;
@@ -23,7 +23,7 @@ const ParseResult Serializer::error_read(const std::ifstream &f) const{
     return ParseResult::OK;
 }
 
-const ParseResult Serializer::error_write(const std::ofstream &f) const {
+ParseResult Serializer::error_write(const std::ofstream &f) const {
     if (f.fail()) {
         if (f.bad()) {
             std::cerr << "流损坏/不可恢复错误" << std::endl;

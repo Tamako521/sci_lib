@@ -37,8 +37,8 @@ private:
     std::unique_ptr<Xml> xml;
 
     //错误处理函数
-    const ParseResult Serializer::error_read(const std::ifstream &f) const;
-    const ParseResult Serializer::error_write(const std::ofstream &f) const;
+    ParseResult error_read(const std::ifstream &f) const;
+    ParseResult error_write(const std::ofstream &f) const;
     //articles.dat——>XmlValue+StringPool
     ParseResult read_header(std::ifstream& f);
     ParseResult read_string_pool(std::ifstream& f,StringPool& pool);
