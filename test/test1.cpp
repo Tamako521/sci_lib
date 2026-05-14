@@ -1,3 +1,5 @@
+# if 0
+
 #include "common/database.hpp"
 #include "analysis/statistics_analyzer.hpp"
 #include "common/parse_result.hpp"
@@ -109,3 +111,5 @@ int main() {
 		return EXIT_FAILURE;
 	}
 }
+
+#endif

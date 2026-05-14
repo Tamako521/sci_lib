@@ -65,10 +65,40 @@ target_include_directories(analysis PUBLIC
 target_link_libraries(analysis PUBLIC common)
 
 # ============================================================================
-# 可执行文件: sci_lib (测试入口)
+# Qt GUI 可执行文件: sci_lib
 # ============================================================================
-add_executable(sci_lib test/test1.cpp)
-target_link_libraries(sci_lib PRIVATE common analysis)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
+
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets PrintSupport)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets PrintSupport)
+
+set(GUI_SOURCES
+    main.cpp
+    src/gui/mainwindow.cpp
+    src/gui/mainwindow.h
+    src/gui/qcustomplot.cpp
+    src/gui/qcustomplot.h
+    src/search/search_engine.cpp
+    src/search/search_engine.hpp
+    src/graph/AuthorGraph.cpp
+    src/graph/AuthorGraph.hpp
+)
+
+add_executable(sci_lib ${GUI_SOURCES})
+target_include_directories(sci_lib PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
+)
+target_compile_definitions(sci_lib PRIVATE
+    LITERATURE_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
+target_link_libraries(sci_lib PRIVATE
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::PrintSupport
+    analysis
+)
 
 # ============================================================================
 # 测试 (可选)
