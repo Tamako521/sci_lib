@@ -72,7 +72,6 @@ private slots:
     void onSearchClick();
     // 槽函数：点击搜索结果表格项时执行
     void onResultCellClick(int row, int column);
-    void onClusterAnalyzeClick();
 
 private:
     // ===================== 搜索区界面控件 =====================
@@ -107,11 +106,8 @@ private:
     QTableWidget *authorTable = nullptr;
      void showAuthorRankTable(bool desc);
     QWidget *authorRankWidget;
-     QPushButton *btnCluster; // 顶部聚类按钮
     QPushButton *btnAuthorAsc;
      QPushButton *btnAuthorDesc;
-    QLineEdit *clusterAuthorInput = nullptr;
-    QTableWidget *clusterTable = nullptr;
     QComboBox *keywordYearCombo = nullptr;
     // ===================== 核心功能函数 =====================
     // 从dblp.xml文件加载所有论文、作者、合作数据

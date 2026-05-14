@@ -102,12 +102,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     QPushButton *btnSearchPage = new QPushButton("文献搜索");
     QPushButton *btnKeywordTop = new QPushButton("每年标题关键词Top10");
     QPushButton *btnAuthorTop = new QPushButton("发文量前100作者");
-    QPushButton *btnCluster = new QPushButton("聚类分析图");
 
     tabBtnLayout->addWidget(btnSearchPage);
     tabBtnLayout->addWidget(btnKeywordTop);
     tabBtnLayout->addWidget(btnAuthorTop);
-    tabBtnLayout->addWidget(btnCluster); // 新增聚类按钮
     searchMainLayout->insertLayout(0, tabBtnLayout);
 
     // 设置窗口标题
@@ -244,7 +242,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         tabWidget->hide();
         tabWidget->setTabVisible(0, true); // 恢复显示
         tabWidget->setTabVisible(1, true); // 恢复显示
-        tabWidget->setTabVisible(2, true);
     });
 
     connect(btnKeywordTop, &QPushButton::clicked, this, [=](){
@@ -277,7 +274,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         tabWidget->setCurrentIndex(0);
         tabWidget->setTabVisible(0, true);
         tabWidget->setTabVisible(1, false); // ✅ 隐藏作者表格标签
-        tabWidget->setTabVisible(2, false); // 隐藏聚类页
         drawGraphicsBarChart();
     });
 
@@ -312,22 +308,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         tabWidget->setCurrentIndex(1);
         tabWidget->setTabVisible(0, false); // ✅ 隐藏关键词统计图标签
         tabWidget->setTabVisible(1, true);
-        tabWidget->setTabVisible(2, false); // 隐藏聚类页
         showAuthorRankTable(true);
-    });
-
-    connect(btnCluster, &QPushButton::clicked, this, [=](){
-        // 隐藏搜索面板
-        searchBottomTab->hide();
-        tabWidget->show();
-        tabWidget->setCurrentIndex(2);
-        // 只显示空白聚类页面，隐藏另外2个
-        tabWidget->setTabVisible(0, false);
-        tabWidget->setTabVisible(1, false);
-        tabWidget->setTabVisible(2, true);
-        if (clusterAuthorInput && clusterAuthorInput->text().trimmed().isEmpty()) {
-            clusterAuthorInput->setText(authorInput->text().trimmed());
-        }
     });
 
     // ==============================
@@ -491,31 +472,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     authorTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     authorRankLayout->addWidget(authorTable);
     tabWidget->addTab(authorRankWidget, "发文量前100作者");
-    // 聚团分析页面
-    QWidget *clusterWidget = new QWidget;
-    QVBoxLayout *clusterLayout = new QVBoxLayout(clusterWidget);
-    QHBoxLayout *clusterSearchLayout = new QHBoxLayout;
-    QLabel *clusterAuthorLabel = new QLabel("作者：");
-    clusterAuthorInput = new QLineEdit;
-    clusterAuthorInput->setPlaceholderText("输入作者名进行局部聚团分析");
-    QPushButton *clusterAnalyzeBtn = new QPushButton("局部聚团分析");
-    clusterSearchLayout->addWidget(clusterAuthorLabel);
-    clusterSearchLayout->addWidget(clusterAuthorInput);
-    clusterSearchLayout->addWidget(clusterAnalyzeBtn);
-    clusterLayout->addLayout(clusterSearchLayout);
-
-    clusterTable = new QTableWidget;
-    clusterTable->setColumnCount(3);
-    clusterTable->setHorizontalHeaderLabels({"序号", "聚团人数", "成员"});
-    clusterTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    clusterTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    clusterTable->verticalHeader()->setVisible(false);
-    clusterTable->horizontalHeader()->setStretchLastSection(true);
-    clusterTable->setColumnWidth(0, 70);
-    clusterTable->setColumnWidth(1, 90);
-    clusterLayout->addWidget(clusterTable);
-    tabWidget->addTab(clusterWidget, "作者聚类分析");
-    connect(clusterAnalyzeBtn, &QPushButton::clicked, this, &MainWindow::onClusterAnalyzeClick);
 
     // ✅ 按钮绑定（现在才正确）
     connect(btnAuthorDesc, &QPushButton::clicked, this, [=](){
@@ -1053,66 +1009,6 @@ void MainWindow::showAuthorRankTable(bool desc)
     authorTable->setColumnWidth(0, 60);    // 排名列
     authorTable->setColumnWidth(1, 420);   // 作者姓名列 大幅加宽
     authorTable->setColumnWidth(2, 120);   // 累计发文量列 缩小一点
-}
-
-void MainWindow::onClusterAnalyzeClick()
-{
-    if (clusterTable == nullptr || clusterAuthorInput == nullptr) {
-        return;
-    }
-
-    const QString author = clusterAuthorInput->text().trimmed();
-    clusterTable->setRowCount(0);
-
-    if (author.isEmpty()) {
-        QMessageBox::information(this, "聚团分析", "请输入作者名");
-        return;
-    }
-
-    QString canonicalAuthor;
-    for (const auto& node : m_nodes) {
-        if (node.name.toLower() == author.toLower()) {
-            canonicalAuthor = node.name;
-            break;
-        }
-    }
-    if (canonicalAuthor.isEmpty()) {
-        for (const auto& node : m_nodes) {
-            if (node.name.contains(author, Qt::CaseInsensitive)) {
-                canonicalAuthor = node.name;
-                break;
-            }
-        }
-    }
-
-    if (canonicalAuthor.isEmpty()) {
-        QMessageBox::information(this, "聚团分析", "未找到该作者");
-        return;
-    }
-
-    const auto cliques = m_authorGraph.findLocalCliques(canonicalAuthor.toStdString());
-    if (cliques.empty()) {
-        QMessageBox::information(this, "聚团分析", "未发现 3 人以上聚团");
-        return;
-    }
-
-    for (size_t i = 0; i < cliques.size(); ++i) {
-        QStringList members;
-        for (const std::string& member : cliques[i]) {
-            members.append(QString::fromStdString(member));
-        }
-        members.sort(Qt::CaseInsensitive);
-
-        const int row = clusterTable->rowCount();
-        clusterTable->insertRow(row);
-        clusterTable->setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
-        clusterTable->setItem(row, 1, new QTableWidgetItem(QString::number(members.size())));
-        clusterTable->setItem(row, 2, new QTableWidgetItem(members.join("、")));
-        clusterTable->item(row, 0)->setTextAlignment(Qt::AlignCenter);
-        clusterTable->item(row, 1)->setTextAlignment(Qt::AlignCenter);
-    }
-
-    clusterTable->resizeRowsToContents();
 }
 
 // --------------------------

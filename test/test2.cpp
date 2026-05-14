@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-// 综合演示：包含 F3、F4 (组员) 以及全面升级的 F2、F6 (你负责的部分)
+// 综合演示：包含 F3、F4 以及 F2 作者合作图与路径搜索
 static int run_system_demo() {
     Database db;
     std::cout << "[INFO] 正在加载文献数据库...\n";
@@ -23,10 +23,10 @@ static int run_system_demo() {
     std::cout << "[INFO] 数据库加载完成，共载入 " << db.size() << " 条记录。\n";
 
     // =========================================================
-    // 第二部分： (F2 合作图与路径搜索 & F6 聚团分析)
+    // 第二部分：F2 合作图与路径搜索
     // =========================================================
     AuthorGraph graph;
-    std::cout << "\n========== F2 & F6: 构建无向带权作者合作图 ==========\n";
+    std::cout << "\n========== F2: 构建无向带权作者合作图 ==========\n";
     graph.buildGraph(db);
     std::cout << "[INFO] 合作图构建完毕，已计算所有合作权重！\n";
 
@@ -94,8 +94,7 @@ static int run_system_demo() {
     while (true) {
         std::cout << "\n==============================================\n";
         std::cout << "请选择分析模式：\n";
-        std::cout << "1. 单人深度分析 (相关搜索 + 最短路径 + 局部聚团)\n";
-        std::cout << "2. 全网全量分析 (全局聚团阶数统计 - 可能较慢)\n";
+        std::cout << "1. 单人深度分析 (相关搜索 + 最短路径)\n";
         std::cout << "0. 退出系统\n";
         std::cout << "==============================================\n";
         std::cout << "您的选择: ";
@@ -122,15 +121,6 @@ static int run_system_demo() {
                     }
                     std::cout << "\n";
                 }
-            }
-            graph.printLocalCliqueStatistics(name);
-        }
-        else if (choice == "2") {
-            std::cout << "\n[警告] 正在启动全网聚团分析，是否继续? (y/n): ";
-            std::string confirm;
-            std::getline(std::cin, confirm);
-            if (confirm == "y" || confirm == "Y") {
-                graph.printCliqueStatistics();
             }
         }
     }
