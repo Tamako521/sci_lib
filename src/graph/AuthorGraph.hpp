@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <cstdint>
 
 class Database;
 
@@ -32,6 +33,8 @@ public:
     // 导出指定作者的关系网络为 JSON
     bool exportAuthorNetworkJSON(const std::string& center_author, const std::string& filepath) const;
 
+    // F6: 统计整个合作图中各阶完全子图数量，counts[k] 表示 k 阶完全子图个数
+    std::vector<std::uint64_t> countCliquesByOrder() const;
 };
 
 #endif // AUTHOR_GRAPH_HPP

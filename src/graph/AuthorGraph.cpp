@@ -6,6 +6,8 @@
 #include <queue>
 #include <fstream>
 #include <map>
+#include <numeric>
+#include <functional>
 
 namespace {
 bool isValidAuthor(const std::string& author) {
@@ -189,6 +191,137 @@ bool AuthorGraph::exportAuthorNetworkJSON(const std::string& center_author, cons
 
     out.close();
     return true;
+}
+
+std::vector<std::uint64_t> AuthorGraph::countCliquesByOrder() const {
+    const int node_count = static_cast<int>(adjacencyList.size());
+    std::vector<std::uint64_t> counts(2, 0);
+    counts[1] = static_cast<std::uint64_t>(node_count);
+    if (node_count == 0) {
+        return counts;
+    }
+
+    std::unordered_map<std::string, int> node_index;
+    node_index.reserve(adjacencyList.size());
+    std::vector<const std::string*> names;
+    names.reserve(adjacencyList.size());
+    for (const auto& item : adjacencyList) {
+        node_index[item.first] = static_cast<int>(names.size());
+        names.push_back(&item.first);
+    }
+
+    std::vector<std::vector<int>> neighbors(static_cast<size_t>(node_count));
+    for (int index = 0; index < node_count; ++index) {
+        const auto& author_neighbors = adjacencyList.at(*names[static_cast<size_t>(index)]);
+        auto& indexed_neighbors = neighbors[static_cast<size_t>(index)];
+        indexed_neighbors.reserve(author_neighbors.size());
+        for (const auto& neighbor : author_neighbors) {
+            auto neighbor_index = node_index.find(neighbor.first);
+            if (neighbor_index != node_index.end()) {
+                indexed_neighbors.push_back(neighbor_index->second);
+            }
+        }
+    }
+
+    std::vector<int> order;
+    order.reserve(static_cast<size_t>(node_count));
+    std::vector<int> degree(static_cast<size_t>(node_count), 0);
+    std::vector<bool> removed(static_cast<size_t>(node_count), false);
+    std::priority_queue<
+        std::pair<int, int>,
+        std::vector<std::pair<int, int>>,
+        std::greater<std::pair<int, int>>> queue;
+    for (int index = 0; index < node_count; ++index) {
+        degree[static_cast<size_t>(index)] = static_cast<int>(neighbors[static_cast<size_t>(index)].size());
+        queue.push({ degree[static_cast<size_t>(index)], index });
+    }
+
+    while (!queue.empty()) {
+        const auto [current_degree, node] = queue.top();
+        queue.pop();
+        if (removed[static_cast<size_t>(node)] || current_degree != degree[static_cast<size_t>(node)]) {
+            continue;
+        }
+        removed[static_cast<size_t>(node)] = true;
+        order.push_back(node);
+        for (int neighbor : neighbors[static_cast<size_t>(node)]) {
+            if (!removed[static_cast<size_t>(neighbor)]) {
+                --degree[static_cast<size_t>(neighbor)];
+                queue.push({ degree[static_cast<size_t>(neighbor)], neighbor });
+            }
+        }
+    }
+
+    std::vector<int> rank_of_node(node_count, 0);
+    for (int rank = 0; rank < node_count; ++rank) {
+        rank_of_node[static_cast<size_t>(order[static_cast<size_t>(rank)])] = rank;
+    }
+
+    std::vector<std::vector<int>> forward_neighbors(static_cast<size_t>(node_count));
+    for (int rank = 0; rank < node_count; ++rank) {
+        const int original_index = order[static_cast<size_t>(rank)];
+        auto& forward = forward_neighbors[static_cast<size_t>(rank)];
+        forward.reserve(neighbors[static_cast<size_t>(original_index)].size());
+        for (int neighbor : neighbors[static_cast<size_t>(original_index)]) {
+            const int neighbor_rank = rank_of_node[static_cast<size_t>(neighbor)];
+            if (rank < neighbor_rank) {
+                forward.push_back(neighbor_rank);
+            }
+        }
+        std::sort(forward.begin(), forward.end());
+    }
+
+    auto addCount = [&](size_t order_size) {
+        if (counts.size() <= order_size) {
+            counts.resize(order_size + 1, 0);
+        }
+        counts[order_size]++;
+    };
+
+    auto intersectForward = [&](const std::vector<int>& candidates,
+                                size_t start,
+                                const std::vector<int>& neighbors) {
+        std::vector<int> result;
+        result.reserve(candidates.size() - start);
+        size_t i = start;
+        size_t j = 0;
+        while (i < candidates.size() && j < neighbors.size()) {
+            const int candidate = candidates[i];
+            const int neighbor = neighbors[j];
+            if (candidate == neighbor) {
+                result.push_back(candidate);
+                ++i;
+                ++j;
+            }
+            else if (candidate < neighbor) {
+                ++i;
+            }
+            else {
+                ++j;
+            }
+        }
+        return result;
+    };
+
+    auto dfs = [&](auto&& self, const std::vector<int>& candidates, size_t current_size) -> void {
+        for (size_t i = 0; i < candidates.size(); ++i) {
+            const int next = candidates[i];
+            const size_t next_size = current_size + 1;
+            addCount(next_size);
+
+            const std::vector<int> next_candidates =
+                intersectForward(candidates, i + 1, forward_neighbors[static_cast<size_t>(next)]);
+            if (!next_candidates.empty()) {
+                self(self, next_candidates, next_size);
+            }
+        }
+    };
+
+    for (int rank = 0; rank < node_count; ++rank) {
+        dfs(dfs, forward_neighbors[static_cast<size_t>(rank)], 1);
+    }
+
+    return counts;
 }
 
 void AuthorGraph::showRelevantSearch(const std::string& author_name) const {

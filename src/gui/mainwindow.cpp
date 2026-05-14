@@ -102,10 +102,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     QPushButton *btnSearchPage = new QPushButton("文献搜索");
     QPushButton *btnKeywordTop = new QPushButton("每年标题关键词Top10");
     QPushButton *btnAuthorTop = new QPushButton("发文量前100作者");
+    QPushButton *btnCliqueStats = new QPushButton("聚团分析");
 
     tabBtnLayout->addWidget(btnSearchPage);
     tabBtnLayout->addWidget(btnKeywordTop);
     tabBtnLayout->addWidget(btnAuthorTop);
+    tabBtnLayout->addWidget(btnCliqueStats);
     searchMainLayout->insertLayout(0, tabBtnLayout);
 
     // 设置窗口标题
@@ -242,6 +244,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         tabWidget->hide();
         tabWidget->setTabVisible(0, true); // 恢复显示
         tabWidget->setTabVisible(1, true); // 恢复显示
+        tabWidget->setTabVisible(2, true);
     });
 
     connect(btnKeywordTop, &QPushButton::clicked, this, [=](){
@@ -274,6 +277,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         tabWidget->setCurrentIndex(0);
         tabWidget->setTabVisible(0, true);
         tabWidget->setTabVisible(1, false); // ✅ 隐藏作者表格标签
+        tabWidget->setTabVisible(2, false);
         drawGraphicsBarChart();
     });
 
@@ -308,7 +312,40 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         tabWidget->setCurrentIndex(1);
         tabWidget->setTabVisible(0, false); // ✅ 隐藏关键词统计图标签
         tabWidget->setTabVisible(1, true);
+        tabWidget->setTabVisible(2, false);
         showAuthorRankTable(true);
+    });
+
+    connect(btnCliqueStats, &QPushButton::clicked, this, [=](){
+        authorInput->hide();
+        titleInput->hide();
+        keywordInput->hide();
+        journalInput->hide();
+        volumeInput->hide();
+        yearInput->hide();
+
+        clearAuthorBtn->hide();
+        clearTitleBtn->hide();
+        clearKeywordBtn->hide();
+        clearJournalBtn->hide();
+        clearVolumeBtn->hide();
+        clearYearBtn->hide();
+
+        searchBtn->hide();
+
+        authorLabel->hide();
+        titleLabel->hide();
+        keywordLabel->hide();
+        journalLabel->hide();
+        volumeLabel->hide();
+        yearLabel->hide();
+
+        searchBottomTab->hide();
+        tabWidget->show();
+        tabWidget->setCurrentIndex(2);
+        tabWidget->setTabVisible(0, false);
+        tabWidget->setTabVisible(1, false);
+        tabWidget->setTabVisible(2, true);
     });
 
     // ==============================
@@ -472,6 +509,26 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     authorTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     authorRankLayout->addWidget(authorTable);
     tabWidget->addTab(authorRankWidget, "发文量前100作者");
+
+    QWidget *cliqueWidget = new QWidget;
+    QVBoxLayout *cliqueLayout = new QVBoxLayout(cliqueWidget);
+    QHBoxLayout *cliqueButtonLayout = new QHBoxLayout;
+    cliqueAnalyzeBtn = new QPushButton("统计各阶完全子图");
+    cliqueButtonLayout->addWidget(cliqueAnalyzeBtn);
+    cliqueButtonLayout->addStretch();
+    cliqueLayout->addLayout(cliqueButtonLayout);
+
+    cliqueTable = new QTableWidget;
+    cliqueTable->setColumnCount(2);
+    cliqueTable->setHorizontalHeaderLabels({"阶数", "完全子图个数"});
+    cliqueTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    cliqueTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    cliqueTable->verticalHeader()->setVisible(false);
+    cliqueTable->horizontalHeader()->setStretchLastSection(true);
+    cliqueTable->setColumnWidth(0, 100);
+    cliqueLayout->addWidget(cliqueTable);
+    tabWidget->addTab(cliqueWidget, "聚团分析");
+    connect(cliqueAnalyzeBtn, &QPushButton::clicked, this, &MainWindow::onCliqueAnalyzeClick);
 
     // ✅ 按钮绑定（现在才正确）
     connect(btnAuthorDesc, &QPushButton::clicked, this, [=](){
@@ -1009,6 +1066,40 @@ void MainWindow::showAuthorRankTable(bool desc)
     authorTable->setColumnWidth(0, 60);    // 排名列
     authorTable->setColumnWidth(1, 420);   // 作者姓名列 大幅加宽
     authorTable->setColumnWidth(2, 120);   // 累计发文量列 缩小一点
+}
+
+void MainWindow::onCliqueAnalyzeClick()
+{
+    showCliqueStatistics();
+}
+
+void MainWindow::showCliqueStatistics()
+{
+    if (cliqueTable == nullptr || cliqueAnalyzeBtn == nullptr) {
+        return;
+    }
+
+    cliqueAnalyzeBtn->setEnabled(false);
+    cliqueAnalyzeBtn->setText("统计中...");
+    cliqueTable->setRowCount(0);
+
+    const std::vector<std::uint64_t> counts = m_authorGraph.countCliquesByOrder();
+
+    for (size_t order = 1; order < counts.size(); ++order) {
+        if (counts[order] == 0) {
+            continue;
+        }
+        const int row = cliqueTable->rowCount();
+        cliqueTable->insertRow(row);
+        cliqueTable->setItem(row, 0, new QTableWidgetItem(QString::number(static_cast<qulonglong>(order))));
+        cliqueTable->setItem(row, 1, new QTableWidgetItem(QString::number(static_cast<qulonglong>(counts[order]))));
+        cliqueTable->item(row, 0)->setTextAlignment(Qt::AlignCenter);
+        cliqueTable->item(row, 1)->setTextAlignment(Qt::AlignCenter);
+    }
+
+    cliqueTable->resizeRowsToContents();
+    cliqueAnalyzeBtn->setText("统计各阶完全子图");
+    cliqueAnalyzeBtn->setEnabled(true);
 }
 
 // --------------------------
