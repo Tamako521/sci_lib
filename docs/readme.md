@@ -1,66 +1,39 @@
-# 科学文献管理系统说明
+# 科学文献管理系统使用说明
 
-## 一、系统概述
+本项目基于 DBLP 本地数据集实现科学文献管理系统。程序采用“先构建索引，再运行 GUI”的方式：`index_builder.exe` 负责读取 `data/dblp.xml` 并生成 `data/index/` 索引文件，`sci_lib.exe` 负责打开索引并显示图形化界面。
 
-本项目基于 DBLP 本地数据集实现科学文献管理系统，支持文献搜索、作者合作关系分析、统计分析、热点分析、聚团分析和图形化展示。
+## 1. 数据准备
 
-系统不使用数据库系统。当前实现采用“离线构建索引 + GUI 只读索引 + 按需读取论文详情”的方式，避免程序启动时把完整 `dblp.xml` 或全部论文记录加载到内存。
-
----
-
-## 二、数据说明
-
-### 2.1 数据来源
-
-DBLP XML 下载地址：
-
-```text
-http://dblp.uni-trier.de/xml/dblp.xml.gz
-```
-
-解压后得到 `dblp.xml`。
-
-### 2.2 项目路径约定
-
-当前项目固定使用以下路径：
-
-```text
-data/dblp.xml       原始 DBLP XML 文件
-data/index/         索引文件目录
-release/index_builder.exe  索引构建工具
-release/sci_lib.exe        GUI 程序
-```
-
-GUI 程序启动时只检测并读取 `data/index/`。如果索引不存在，会弹窗提示先运行 `index_builder.exe`，不会在 GUI 内解析 XML 或构建索引。
-
-### 2.3 当前解析范围
-
-当前只处理 DBLP 中的 `<article>` 记录，主要字段包括：
-
-- `author`
-- `title`
-- `journal`
-- `volume`
-- `month`
-- `year`
-- `cdrom`
-- `ee`
-
-字段缺失时内部使用 `"<missing_string>"` 表示，GUI 展示时会尽量转为空白或“无”。
-
----
-
-## 三、使用流程
-
-### 3.1 准备数据
-
-将 `dblp.xml` 放入：
+将 DBLP 原始 XML 文件放到项目的 `data/` 目录下：
 
 ```text
 data/dblp.xml
 ```
 
-### 3.2 构建索引
+索引构建完成后会生成：
+
+```text
+data/index/
+```
+
+GUI 运行时只读取 `data/index/`，不会在 GUI 中解析 `dblp.xml`。
+
+## 2. 编译 index_builder.exe
+
+在项目根目录下使用 Qt/MinGW 编译索引构建工具：
+
+```powershell
+qmake.exe index_builder.pro -spec win32-g++ CONFIG+=release
+mingw32-make -f Makefile.Release
+```
+
+编译完成后会生成：
+
+```text
+release/index_builder.exe
+```
+
+## 3. 构建索引数据文件
 
 运行：
 
@@ -68,140 +41,86 @@ data/dblp.xml
 release/index_builder.exe
 ```
 
-构建工具默认读取 `data/dblp.xml`，默认输出到 `data/index/`。
+它会默认读取：
 
-如果检测到旧索引，会询问是否删除并重建：
+```text
+data/dblp.xml
+```
 
-- 输入 `y`：清空旧索引并重新构建。
+并生成：
+
+```text
+data/index/
+```
+
+完整 DBLP 数据构建索引耗时较长，通常大约需要 40-50 分钟。构建期间请等待程序结束，不要关闭窗口。
+
+如果检测到旧索引，程序会询问是否重新构建：
+
+- 输入 `y`：删除旧索引并重新构建。
 - 输入 `n`：保留旧索引并退出。
 
-### 3.3 启动 GUI
+## 4. 编译 sci_lib.exe
 
-运行：
+索引构建完成后，编译 GUI 程序：
+
+```powershell
+qmake.exe sci_lib.pro -spec win32-g++ CONFIG+=release
+mingw32-make -f Makefile.Release
+```
+
+编译完成后会生成：
 
 ```text
 release/sci_lib.exe
 ```
 
-GUI 启动后会打开 `data/index/`，初始化搜索、统计和合作图模块。缺少索引时提示：
+## 5. 运行 GUI
+
+双击运行：
+
+```text
+release/sci_lib.exe
+```
+
+程序启动后会自动检测 `data/index/manifest.bin`。如果索引不存在，会提示：
 
 ```text
 未检测到索引，请先运行 index_builder.exe 构建索引。
 ```
 
----
+此时需要先完成第 3 步索引构建。
 
-## 四、系统功能
+## 6. 如果双击运行不了
 
-### F1. 基本搜索
+如果双击 `sci_lib.exe` 没有反应，或提示缺少运行库、无法定位入口点、DLL 相关错误，请将项目 `ddl/` 目录下的文件复制到 `sci_lib.exe` 所在目录，也就是 `release/` 目录。
 
-支持：
+需要复制的文件包括：
 
-- 按作者名搜索论文。
-- 支持完整论文标题接口查询。
-- GUI 标题输入框当前按标题词索引进行匹配。
-- 多条件过滤：作者、标题关键词、期刊、卷号、年份。
+```text
+ddl/libgcc_s_seh-1.dll
+ddl/libstdc++-6.dll
+ddl/libwinpthread-1.dll
+```
 
-实现方式：
+复制后的目录应类似：
 
-- 作者搜索使用 `author_lookup + author_index`。
-- 标题精确搜索接口使用 `title_exact` 哈希目录。
-- GUI 标题框和关键词框当前使用 `title_word_index` 标题词倒排索引。
-- 搜索结果通过 `record_id` 按需读取 `articles.dat`。
+```text
+release/sci_lib.exe
+release/libgcc_s_seh-1.dll
+release/libstdc++-6.dll
+release/libwinpthread-1.dll
+```
 
----
+如果 `index_builder.exe` 也出现同类 DLL 错误，也可以把这三个 DLL 放到 `release/` 中，因为两个 exe 都在同一目录下。
 
-### F2. 相关搜索（作者合作关系）
+## 7. 推荐完整流程
 
-输入作者名后，系统显示该作者的合作作者关系。
-
-实现方式：
-
-- 构建索引时生成 `coauthor_graph.dat`。
-- 运行时通过 `AuthorGraph::queryCoauthors()` 查询合作者。
-- GUI 只展示合作次数最高的前若干位合作者，避免图过密。
-
----
-
-### F3. 作者统计
-
-统计发表论文数量最多的前 100 名作者。
-
-实现方式：
-
-- 构建索引阶段预计算。
-- 结果写入 `stats_index.dat`。
-- GUI 通过 `StatisticsAnalyzer::top_authors()` 读取并展示。
-
----
-
-### F4. 热点分析
-
-对每一年论文标题进行分词统计，展示该年份 Top10 标题关键词。
-
-实现方式：
-
-- 构建索引阶段完成标题分词、停用词过滤和词频统计。
-- 结果写入 `stats_index.dat`。
-- GUI 提供年份选择框并绘制柱状图。
-
----
-
-### F5. 部分匹配搜索
-
-输入若干关键词，返回标题中包含关键词的论文。
-
-实现方式：
-
-- 构建 `title_word_lookup + title_word_index` 倒排索引。
-- 多关键词搜索时读取多个有序 `record_id` 列表并做交集或合并。
-
----
-
-### F6. 聚团分析
-
-作者之间的合作关系可看作图：
-
-- 顶点：作者。
-- 边：两名作者存在合作关系。
-- 聚团：完全子图。
-
-当前实现统计 1 到 7 阶完全子图数量。
-
-实现方式：
-
-- 构建索引阶段基于作者合作图预计算。
-- 结果写入 `clique_stats.dat`。
-- GUI 启动后直接预填“聚团分析”表格。
-- GUI 中不再现场计算聚团，避免卡顿。
-
-说明：完整 DBLP 中存在数百作者同篇论文，完整枚举所有阶完全子图会组合爆炸，因此当前版本按课程展示需要限制到 7 阶。
-
----
-
-### F7. 可视化显示
-
-GUI 使用 Qt Widgets 实现，主要展示：
-
-- 文献搜索结果表格。
-- 论文详情弹窗。
-- 作者合作关系图。
-- 作者详情表。
-- 年度关键词柱状图。
-- 发文量前 100 作者表。
-- 聚团分析结果表。
-
-作者合作关系图当前支持：
-
-- 左侧 3/4 显示合作图。
-- 右侧 1/4 显示点击节点后的作者详情。
-- 作者详情包括作者姓名、累计发文量、直接合作者数量、与中心作者合作次数。
-
----
-
-## 五、设计要求对应
-
-1. **界面友好**：提供中文按钮、表格、弹窗和图形化展示。
-2. **物理存储**：原始数据和索引均存储在本地文件中，程序负责文件读写。
-3. **逻辑结构**：使用字符串池、倒排索引、哈希目录、邻接表和预计算统计结果处理大数据量。
-4. **大数据处理**：GUI 不全量加载 DBLP，运行时只加载轻量索引并按需读取文章记录。
+```text
+1. 将 dblp.xml 放入 data/dblp.xml
+2. 编译 index_builder.exe
+3. 运行 index_builder.exe 构建 data/index/，约 40-50 分钟
+4. 编译 sci_lib.exe
+5. 双击 release/sci_lib.exe 打开 GUI
+6. 若无法运行，将 ddl/ 中的 DLL 复制到 release/
+```

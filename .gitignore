@@ -53,7 +53,6 @@ MinSizeRel/
 *.obj
 *.a
 *.so
-*.dll
 *.dylib
 *.pdb
 *.ilk
@@ -61,6 +60,8 @@ MinSizeRel/
 *.iobj
 *.ipdb
 *.exp
+*.o
+*.exe
 
 # Logs and temporary files
 *.log
