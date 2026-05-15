@@ -20,23 +20,18 @@ endif()
 # ============================================================================
 # 1. 先收集所有的源文件 (.cpp)
 set(COMMON_SOURCES
-    src/common/string_pool.cpp
-    src/common/xml_value.cpp
-    src/common/xml_parser.cpp
-    src/common/serializer.cpp
-    src/common/database.cpp
+    src/indexed/common/string_pool.cpp
+    src/indexed/common/xml_value.cpp
+    src/indexed/common/serializer.cpp
+    src/indexed/common/database.cpp
 )
 
-# 2. 显式收集所有的头文件 (.hpp)，让它们在 VS 中显示
 set(COMMON_HEADERS
-    src/common/string_pool.hpp
-    src/common/xml_value.hpp
-    src/common/xml_parser.hpp
-    src/common/serializer.hpp
-    src/common/database.hpp
-    src/common/parse_result.hpp
-    src/common/process_resporter.hpp
-    # 如果有其他头文件，继续加在这里
+    src/index/index_format.hpp
+    src/indexed/common/string_pool.hpp
+    src/indexed/common/xml_value.hpp
+    src/indexed/common/serializer.hpp
+    src/indexed/common/database.hpp
 )
 
 # 3. 构建库：同时传入源文件和头文件
@@ -51,11 +46,11 @@ target_include_directories(common PUBLIC
 # 分析库: analysis
 # ============================================================================
 set(ANALYSIS_SOURCES
-    src/analysis/statistics_analyzer.cpp
+    src/indexed/analysis/statistics_analyzer.cpp
 )
 
 set(ANALYSIS_HEADERS
-    src/analysis/statistics_analyzer.hpp
+    src/indexed/analysis/statistics_analyzer.hpp
 )
 
 add_library(analysis STATIC ${ANALYSIS_SOURCES} ${ANALYSIS_HEADERS})
@@ -76,20 +71,20 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets PrintSupport)
 
 set(GUI_SOURCES
     main.cpp
-    src/gui/mainwindow.cpp
-    src/gui/mainwindow.h
-    src/gui/qcustomplot.cpp
-    src/gui/qcustomplot.h
-    src/search/search_engine.cpp
-    src/search/search_engine.hpp
-    src/graph/AuthorGraph.cpp
-    src/graph/AuthorGraph.hpp
+    src/indexed/gui/mainwindow.cpp
+    src/indexed/gui/mainwindow.h
+    src/indexed/gui/qcustomplot.cpp
+    src/indexed/gui/qcustomplot.h
+    src/indexed/search/search_engine.cpp
+    src/indexed/search/search_engine.hpp
+    src/indexed/graph/AuthorGraph.cpp
+    src/indexed/graph/AuthorGraph.hpp
 )
 
 add_executable(sci_lib ${GUI_SOURCES})
 target_include_directories(sci_lib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/indexed/gui
 )
 target_compile_definitions(sci_lib PRIVATE
     LITERATURE_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
@@ -98,6 +93,24 @@ target_link_libraries(sci_lib PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::PrintSupport
     analysis
+)
+
+add_executable(index_builder
+    src/index/index_builder_main.cpp
+    src/index/index_builder.cpp
+    src/index/index_builder.hpp
+    src/index/index_writer.cpp
+    src/index/index_writer.hpp
+    src/index/index_format.hpp
+    src/indexed/common/string_pool.cpp
+    src/indexed/common/string_pool.hpp
+    src/indexed/common/xml_value.cpp
+    src/indexed/common/xml_value.hpp
+    src/indexed/common/database.cpp
+    src/indexed/common/database.hpp
+)
+target_include_directories(index_builder PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 # ============================================================================
