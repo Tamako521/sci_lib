@@ -7,11 +7,13 @@
 #include <queue>
 #include <sstream>
 #include <unordered_set>
+#include <functional>
 
 namespace indexed {
 
 namespace {
 constexpr std::size_t chunk_size = 8 * 1024 * 1024;
+constexpr std::size_t max_clique_order = 7;
 
 std::uint64_t edge_key(std::uint32_t a, std::uint32_t b)
 {
@@ -19,6 +21,15 @@ std::uint64_t edge_key(std::uint32_t a, std::uint32_t b)
         std::swap(a, b);
     }
     return (static_cast<std::uint64_t>(a) << 32) | b;
+}
+
+void saturating_add(std::uint64_t& target, std::uint64_t value)
+{
+    if (UINT64_MAX - target < value) {
+        target = UINT64_MAX;
+        return;
+    }
+    target += value;
 }
 }
 
@@ -40,22 +51,47 @@ bool IndexBuilder::build(const std::filesystem::path& xml_path, const std::files
         std::filesystem::remove_all(index_dir_);
     }
     std::filesystem::create_directories(index_dir_);
-    articles_.open(index_dir_ / "articles.dat", std::ios::binary);
-    if (!articles_.is_open()) {
+    if (!writer_.open(index_dir_)) {
         std::cerr << "无法写入 articles.dat\n";
         return false;
     }
     if (!parse_xml(xml_path)) {
         return false;
     }
-    articles_.close();
-    if (!write_indexes()) {
+    writer_.close_articles();
+    std::cout << "开始统计聚团...\n";
+    clique_counts_ = count_cliques_by_order();
+    std::uint64_t total_cliques = 0;
+    std::size_t max_order = 0;
+    for (std::size_t order = 1; order < clique_counts_.size(); ++order) {
+        saturating_add(total_cliques, clique_counts_[order]);
+        if (clique_counts_[order] > 0) {
+            max_order = order;
+        }
+    }
+    std::cout << "聚团统计完成: max_order=" << max_order
+              << ", max_order_limit=" << max_clique_order
+              << ", total=" << total_cliques << "\n";
+    if (!writer_.write_indexes(pool_,
+                               key_entries_,
+                               author_string_ids_,
+                               author_postings_,
+                               title_exact_,
+                               word_string_ids_,
+                               word_postings_,
+                               year_postings_,
+                               journal_postings_,
+                               volume_postings_,
+                               author_counts_,
+                               yearly_word_counts_,
+                               edge_weights_,
+                               clique_counts_)) {
         return false;
     }
     std::ofstream manifest(index_dir_ / "manifest.bin", std::ios::binary);
-    const std::uint64_t record_count = offsets_.size();
+    const std::uint64_t record_count = writer_.offsets().size();
     format::write_pod(manifest, record_count);
-    std::cout << "索引构建完成: records=" << offsets_.size()
+    std::cout << "索引构建完成: records=" << writer_.offsets().size()
               << ", authors=" << author_string_ids_.size()
               << ", title_words=" << word_string_ids_.size()
               << ", edges=" << edge_weights_.size() << "\n";
@@ -164,7 +200,7 @@ bool IndexBuilder::parse_xml(const std::filesystem::path& xml_path)
 void IndexBuilder::process_article(const Article& article)
 {
     const std::uint32_t record_id = next_record_id_++;
-    write_article(article);
+    writer_.write_article(article);
     if (article.key_id != format::invalid_id) {
         key_entries_.push_back({ article.key_id, record_id, 0 });
     }
@@ -214,161 +250,6 @@ void IndexBuilder::process_article(const Article& article)
     if (article.year_id != format::invalid_id) year_postings_[article.year_id].push_back(record_id);
     if (article.journal_id != format::invalid_id) journal_postings_[article.journal_id].push_back(record_id);
     if (article.volume_id != format::invalid_id) volume_postings_[article.volume_id].push_back(record_id);
-}
-
-void IndexBuilder::write_article(const Article& article)
-{
-    const auto offset = static_cast<std::uint64_t>(articles_.tellp());
-    auto write_id = [&](std::uint32_t id) { format::write_pod(articles_, id); };
-    write_id(article.mdate_id);
-    write_id(article.key_id);
-    write_id(article.title_id);
-    write_id(article.journal_id);
-    write_id(article.volume_id);
-    write_id(article.month_id);
-    write_id(article.year_id);
-    auto write_ids = [&](const std::vector<std::uint32_t>& ids) {
-        const auto count = static_cast<std::uint32_t>(ids.size());
-        format::write_pod(articles_, count);
-        if (!ids.empty()) {
-            articles_.write(reinterpret_cast<const char*>(ids.data()),
-                            static_cast<std::streamsize>(ids.size() * sizeof(std::uint32_t)));
-        }
-    };
-    write_ids(article.author_ids);
-    write_ids(article.cdrom_ids);
-    write_ids(article.ee_ids);
-    const auto end = static_cast<std::uint64_t>(articles_.tellp());
-    offsets_.push_back({ offset, static_cast<std::uint32_t>(end - offset) });
-}
-
-bool IndexBuilder::write_indexes()
-{
-    {
-        std::ofstream out(index_dir_ / "string_pool.dat", std::ios::binary);
-        const auto count = static_cast<std::uint64_t>(pool_.size());
-        format::write_pod(out, count);
-        for (const auto& value : pool_.all_strings()) {
-            format::write_string(out, value);
-        }
-    }
-    format::write_vector_file(index_dir_ / "article_offsets.dat", offsets_);
-    format::write_vector_file(index_dir_ / "key_index.dat", key_entries_);
-
-    std::vector<format::PostingDirEntry> author_lookup;
-    for (std::uint32_t author_id = 0; author_id < author_string_ids_.size(); ++author_id) {
-        author_lookup.push_back({ author_string_ids_[author_id], author_id, 0 });
-    }
-    write_lookup("author_lookup.dat", author_lookup);
-    write_posting_pair("author_index_dir.dat", "author_index.dat", author_postings_);
-
-    {
-        std::vector<format::TitleHashDirEntry> dirs;
-        std::vector<format::TitleExactEntry> values;
-        for (auto& [hash, entries] : title_exact_) {
-            std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
-                return a.record_id < b.record_id;
-            });
-            dirs.push_back({ hash, static_cast<std::uint64_t>(values.size()), static_cast<std::uint32_t>(entries.size()) });
-            values.insert(values.end(), entries.begin(), entries.end());
-        }
-        format::write_vector_file(index_dir_ / "title_exact_dir.dat", dirs);
-        std::ofstream out(index_dir_ / "title_exact_index.dat", std::ios::binary);
-        if (!values.empty()) {
-            out.write(reinterpret_cast<const char*>(values.data()), static_cast<std::streamsize>(values.size() * sizeof(format::TitleExactEntry)));
-        }
-    }
-
-    std::vector<format::PostingDirEntry> word_lookup;
-    for (std::uint32_t word_id = 0; word_id < word_string_ids_.size(); ++word_id) {
-        word_lookup.push_back({ word_string_ids_[word_id], word_id, 0 });
-    }
-    write_lookup("title_word_lookup.dat", word_lookup);
-    write_posting_pair("title_word_index_dir.dat", "title_word_index.dat", word_postings_);
-    write_posting_pair("year_index_dir.dat", "year_index.dat", year_postings_);
-    write_posting_pair("journal_index_dir.dat", "journal_index.dat", journal_postings_);
-    write_posting_pair("volume_index_dir.dat", "volume_index.dat", volume_postings_);
-
-    {
-        std::ofstream out(index_dir_ / "stats_index.dat", std::ios::binary);
-        std::vector<std::pair<std::uint32_t, std::uint32_t>> authors(author_counts_.begin(), author_counts_.end());
-        std::sort(authors.begin(), authors.end(), [&](const auto& a, const auto& b) {
-            if (a.second != b.second) return a.second > b.second;
-            return pool_.get(author_string_ids_[a.first]) < pool_.get(author_string_ids_[b.first]);
-        });
-        if (authors.size() > 100) authors.resize(100);
-        format::write_pod(out, static_cast<std::uint64_t>(authors.size()));
-        for (const auto& [author_id, count] : authors) {
-            format::write_pod(out, author_id);
-            format::write_pod(out, count);
-        }
-        format::write_pod(out, static_cast<std::uint64_t>(yearly_word_counts_.size()));
-        for (auto& [year_id, counts] : yearly_word_counts_) {
-            std::vector<std::pair<std::uint32_t, std::uint32_t>> words(counts.begin(), counts.end());
-            std::sort(words.begin(), words.end(), [&](const auto& a, const auto& b) {
-                if (a.second != b.second) return a.second > b.second;
-                return pool_.get(a.first) < pool_.get(b.first);
-            });
-            if (words.size() > 10) words.resize(10);
-            format::write_pod(out, year_id);
-            format::write_pod(out, static_cast<std::uint32_t>(words.size()));
-            for (const auto& [word_id, count] : words) {
-                format::write_pod(out, word_id);
-                format::write_pod(out, count);
-            }
-        }
-    }
-
-    {
-        std::vector<std::vector<format::WeightedNeighbor>> graph(author_string_ids_.size());
-        for (const auto& [key, weight] : edge_weights_) {
-            const auto a = static_cast<std::uint32_t>(key >> 32);
-            const auto b = static_cast<std::uint32_t>(key & 0xffffffffu);
-            graph[a].push_back({ b, weight });
-            graph[b].push_back({ a, weight });
-        }
-        std::ofstream out(index_dir_ / "coauthor_graph.dat", std::ios::binary);
-        format::write_pod(out, static_cast<std::uint64_t>(graph.size()));
-        for (std::uint32_t author_id = 0; author_id < graph.size(); ++author_id) {
-            std::sort(graph[author_id].begin(), graph[author_id].end(), [](const auto& a, const auto& b) {
-                return a.author_id < b.author_id;
-            });
-            format::write_pod(out, author_id);
-            format::write_pod(out, static_cast<std::uint32_t>(graph[author_id].size()));
-            if (!graph[author_id].empty()) {
-                out.write(reinterpret_cast<const char*>(graph[author_id].data()),
-                          static_cast<std::streamsize>(graph[author_id].size() * sizeof(format::WeightedNeighbor)));
-            }
-        }
-    }
-    return true;
-}
-
-void IndexBuilder::write_lookup(const std::string& file_name,
-                                const std::vector<format::PostingDirEntry>& entries)
-{
-    format::write_vector_file(index_dir_ / file_name, entries);
-}
-
-void IndexBuilder::write_posting_pair(const std::string& dir_name,
-                                      const std::string& index_name,
-                                      const PostingMap& postings)
-{
-    std::vector<format::PostingDirEntry> dirs;
-    std::vector<std::uint32_t> values;
-    dirs.reserve(postings.size());
-    for (auto [id, ids] : postings) {
-        std::sort(ids.begin(), ids.end());
-        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
-        dirs.push_back({ id, static_cast<std::uint64_t>(values.size()), static_cast<std::uint32_t>(ids.size()) });
-        values.insert(values.end(), ids.begin(), ids.end());
-    }
-    format::write_vector_file(index_dir_ / dir_name, dirs);
-    std::ofstream out(index_dir_ / index_name, std::ios::binary);
-    if (!values.empty()) {
-        out.write(reinterpret_cast<const char*>(values.data()),
-                  static_cast<std::streamsize>(values.size() * sizeof(std::uint32_t)));
-    }
 }
 
 std::string IndexBuilder::strip_inline_tags(const std::string& text)
@@ -453,6 +334,184 @@ std::uint64_t IndexBuilder::stable_hash(const std::string& value)
         hash *= prime;
     }
     return hash;
+}
+
+std::vector<std::uint64_t> IndexBuilder::count_cliques_by_order() const
+{
+    const int node_count = static_cast<int>(author_string_ids_.size());
+    std::vector<std::uint64_t> counts(max_clique_order + 1, 0);
+    counts[1] = static_cast<std::uint64_t>(node_count);
+    if (node_count == 0) {
+        return counts;
+    }
+
+    std::vector<std::vector<int>> neighbors(static_cast<std::size_t>(node_count));
+    for (const auto& [key, weight] : edge_weights_) {
+        (void)weight;
+        const auto a = static_cast<int>(key >> 32);
+        const auto b = static_cast<int>(key & 0xffffffffu);
+        if (a >= 0 && b >= 0 && a < node_count && b < node_count) {
+            neighbors[static_cast<std::size_t>(a)].push_back(b);
+            neighbors[static_cast<std::size_t>(b)].push_back(a);
+        }
+    }
+    for (auto& list : neighbors) {
+        std::sort(list.begin(), list.end());
+        list.erase(std::unique(list.begin(), list.end()), list.end());
+    }
+
+    std::vector<int> order;
+    order.reserve(static_cast<std::size_t>(node_count));
+    std::vector<int> degree(static_cast<std::size_t>(node_count), 0);
+    std::vector<bool> removed(static_cast<std::size_t>(node_count), false);
+    std::priority_queue<
+        std::pair<int, int>,
+        std::vector<std::pair<int, int>>,
+        std::greater<std::pair<int, int>>> queue;
+    for (int index = 0; index < node_count; ++index) {
+        degree[static_cast<std::size_t>(index)] = static_cast<int>(neighbors[static_cast<std::size_t>(index)].size());
+        queue.push({ degree[static_cast<std::size_t>(index)], index });
+    }
+
+    while (!queue.empty()) {
+        const auto [current_degree, node] = queue.top();
+        queue.pop();
+        if (removed[static_cast<std::size_t>(node)] || current_degree != degree[static_cast<std::size_t>(node)]) {
+            continue;
+        }
+        removed[static_cast<std::size_t>(node)] = true;
+        order.push_back(node);
+        for (int neighbor : neighbors[static_cast<std::size_t>(node)]) {
+            if (!removed[static_cast<std::size_t>(neighbor)]) {
+                --degree[static_cast<std::size_t>(neighbor)];
+                queue.push({ degree[static_cast<std::size_t>(neighbor)], neighbor });
+            }
+        }
+    }
+
+    std::vector<int> rank_of_node(static_cast<std::size_t>(node_count), 0);
+    for (int rank = 0; rank < node_count; ++rank) {
+        rank_of_node[static_cast<std::size_t>(order[static_cast<std::size_t>(rank)])] = rank;
+    }
+
+    std::vector<std::vector<int>> forward_neighbors(static_cast<std::size_t>(node_count));
+    for (int rank = 0; rank < node_count; ++rank) {
+        const int original_index = order[static_cast<std::size_t>(rank)];
+        auto& forward = forward_neighbors[static_cast<std::size_t>(rank)];
+        for (int neighbor : neighbors[static_cast<std::size_t>(original_index)]) {
+            const int neighbor_rank = rank_of_node[static_cast<std::size_t>(neighbor)];
+            if (rank < neighbor_rank) {
+                forward.push_back(neighbor_rank);
+            }
+        }
+        std::sort(forward.begin(), forward.end());
+    }
+
+    std::vector<std::unordered_set<int>> forward_sets(static_cast<std::size_t>(node_count));
+    for (int rank = 0; rank < node_count; ++rank) {
+        const auto& forward = forward_neighbors[static_cast<std::size_t>(rank)];
+        forward_sets[static_cast<std::size_t>(rank)].reserve(forward.size());
+        for (int neighbor : forward) {
+            forward_sets[static_cast<std::size_t>(rank)].insert(neighbor);
+        }
+    }
+
+    auto add_count = [&](std::size_t order_size) {
+        if (order_size > max_clique_order) {
+            return;
+        }
+        saturating_add(counts[order_size], 1);
+    };
+
+    auto add_complete_suffix_counts = [&](std::size_t current_size, std::size_t candidate_count) {
+        const std::size_t max_add = std::min(candidate_count, max_clique_order - current_size);
+        for (std::size_t add = 1; add <= max_add; ++add) {
+            const std::size_t order_size = current_size + add;
+            saturating_add(counts[order_size], combination(candidate_count, add));
+        }
+    };
+
+    auto is_complete_candidates = [&](const std::vector<int>& candidates) {
+        for (std::size_t i = 0; i < candidates.size(); ++i) {
+            const auto& neighbor_set = forward_sets[static_cast<std::size_t>(candidates[i])];
+            for (std::size_t j = i + 1; j < candidates.size(); ++j) {
+                if (neighbor_set.find(candidates[j]) == neighbor_set.end()) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+
+    auto intersect_forward = [](const std::vector<int>& candidates,
+                                std::size_t start,
+                                const std::vector<int>& neighbor_list) {
+        std::vector<int> result;
+        std::size_t i = start;
+        std::size_t j = 0;
+        while (i < candidates.size() && j < neighbor_list.size()) {
+            const int candidate = candidates[i];
+            const int neighbor = neighbor_list[j];
+            if (candidate == neighbor) {
+                result.push_back(candidate);
+                ++i;
+                ++j;
+            } else if (candidate < neighbor) {
+                ++i;
+            } else {
+                ++j;
+            }
+        }
+        return result;
+    };
+
+    auto dfs = [&](auto&& self, const std::vector<int>& candidates, std::size_t current_size) -> void {
+        if (candidates.empty() || current_size >= max_clique_order) {
+            return;
+        }
+        if (is_complete_candidates(candidates)) {
+            add_complete_suffix_counts(current_size, candidates.size());
+            return;
+        }
+        for (std::size_t i = 0; i < candidates.size(); ++i) {
+            const int next = candidates[i];
+            add_count(current_size + 1);
+            if (current_size + 1 >= max_clique_order) {
+                continue;
+            }
+
+            const std::vector<int> next_candidates =
+                intersect_forward(candidates, i + 1, forward_neighbors[static_cast<std::size_t>(next)]);
+            if (!next_candidates.empty()) {
+                self(self, next_candidates, current_size + 1);
+            }
+        }
+    };
+
+    for (int rank = 0; rank < node_count; ++rank) {
+        dfs(dfs, forward_neighbors[static_cast<std::size_t>(rank)], 1);
+    }
+
+    return counts;
+}
+
+std::uint64_t IndexBuilder::combination(std::uint64_t n, std::uint64_t k)
+{
+    if (k > n) {
+        return 0;
+    }
+    if (k > n - k) {
+        k = n - k;
+    }
+
+    unsigned __int128 result = 1;
+    for (std::uint64_t i = 1; i <= k; ++i) {
+        result = (result * (n - k + i)) / i;
+        if (result > UINT64_MAX) {
+            return UINT64_MAX;
+        }
+    }
+    return static_cast<std::uint64_t>(result);
 }
 
 } // namespace indexed

@@ -72,7 +72,6 @@ private slots:
     void onSearchClick();
     // 槽函数：点击搜索结果表格项时执行
     void onResultCellClick(int row, int column);
-    void onCliqueAnalyzeClick();
 
 private:
     // ===================== 搜索区界面控件 =====================
@@ -90,6 +89,7 @@ private:
     QTabWidget *tabWidget;        // 标签页控件（切换关系图 / 统计图表）
     QGraphicsView *graphView;     // 视图控件：显示作者合作关系图
     QGraphicsScene *graphScene;   // 场景控件：绘制合作关系图的画布
+    QTableWidget *authorDetailTable = nullptr; // 作者合作图右侧详情表
     QCustomPlot *barChartPlot;    // 柱状图控件：显示论文发表年份统计
 
     // ===================== 全局原始数据 =====================
@@ -111,7 +111,6 @@ private:
      QPushButton *btnAuthorDesc;
     QComboBox *keywordYearCombo = nullptr;
     QTableWidget *cliqueTable = nullptr;
-    QPushButton *cliqueAnalyzeBtn = nullptr;
     // ===================== 核心功能函数 =====================
     // 从dblp.xml文件加载所有论文、作者、合作数据
     void loadDblpXml(const QString &filePath);
@@ -119,6 +118,8 @@ private:
     void filterAuthorData(const QString &targetAuthor);
     // 绘制作者合作关系图
     void drawCooperationGraph();
+    void showAuthorDetail(const QString& authorName);
+    void clearAuthorDetail();
     // 绘制年份统计柱状图
     void drawGraphicsBarChart();
     void populateKeywordYearCombo();

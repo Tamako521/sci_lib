@@ -18,7 +18,6 @@ SOURCES += \
     src/indexed/gui/qcustomplot.cpp \
     src/indexed/common/string_pool.cpp \
     src/indexed/common/xml_value.cpp \
-    src/indexed/common/serializer.cpp \
     src/indexed/common/database.cpp \
     src/indexed/analysis/statistics_analyzer.cpp \
     src/indexed/search/search_engine.cpp \
@@ -30,7 +29,6 @@ HEADERS += \
     src/index/index_format.hpp \
     src/indexed/common/string_pool.hpp \
     src/indexed/common/xml_value.hpp \
-    src/indexed/common/serializer.hpp \
     src/indexed/common/database.hpp \
     src/indexed/analysis/statistics_analyzer.hpp \
     src/indexed/search/search_engine.hpp \

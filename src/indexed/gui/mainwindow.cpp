@@ -9,10 +9,12 @@
 #include <algorithm>
 #include <QDebug>
 #include <QMessageBox>
+#include <QPainter>
 #include <QTimer>
 #include <QDesktopServices>
 #include <QUrl>
 #include <QCoreApplication>
+#include <QGraphicsItem>
 #include <QHash>
 #include <unordered_set>
 #include <limits>
@@ -132,7 +134,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     QHBoxLayout *authorSearchLayout = new QHBoxLayout;
     QLabel *authorLabel = new QLabel("作者：");
     authorInput = new QLineEdit;
-    authorInput->setPlaceholderText("输入作者名搜索");
+    authorInput->setPlaceholderText("输入完整作者名精确搜索");
     QPushButton *clearAuthorBtn = new QPushButton("清空");
     authorSearchLayout->addWidget(authorLabel);
     authorSearchLayout->addWidget(authorInput);
@@ -475,11 +477,40 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     graphView = new QGraphicsView;
     graphScene = new QGraphicsScene;
     graphView->setScene(graphScene);
+    graphView->setRenderHint(QPainter::Antialiasing);
+
+    authorDetailTable = new QTableWidget;
+    authorDetailTable->setColumnCount(2);
+    authorDetailTable->setHorizontalHeaderLabels({"项目", "内容"});
+    authorDetailTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    authorDetailTable->setSelectionMode(QAbstractItemView::NoSelection);
+    authorDetailTable->verticalHeader()->setVisible(false);
+    authorDetailTable->horizontalHeader()->setStretchLastSection(true);
+    authorDetailTable->setColumnWidth(0, 130);
+    authorDetailTable->setWordWrap(true);
+    clearAuthorDetail();
+
+    QWidget *graphTabWidget = new QWidget;
+    QHBoxLayout *graphTabLayout = new QHBoxLayout(graphTabWidget);
+    graphTabLayout->setContentsMargins(0, 0, 0, 0);
+    graphTabLayout->addWidget(graphView, 3);
+    graphTabLayout->addWidget(authorDetailTable, 1);
+
+    connect(graphScene, &QGraphicsScene::selectionChanged, this, [this]() {
+        const QList<QGraphicsItem*> items = graphScene->selectedItems();
+        for (QGraphicsItem *item : items) {
+            const QVariant author = item->data(0);
+            if (author.isValid() && !author.toString().isEmpty()) {
+                showAuthorDetail(author.toString());
+                return;
+            }
+        }
+    });
 
     // 下方双标签
     searchBottomTab = new QTabWidget;
     searchBottomTab->addTab(resultTable, "文献搜索结果");
-    searchBottomTab->addTab(graphView, "作者合作关系图");
+    searchBottomTab->addTab(graphTabWidget, "作者合作关系图");
     mainLayout->addWidget(searchBottomTab, 99);
 
     // 统计图表 + 作者表格
@@ -521,11 +552,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     QWidget *cliqueWidget = new QWidget;
     QVBoxLayout *cliqueLayout = new QVBoxLayout(cliqueWidget);
-    QHBoxLayout *cliqueButtonLayout = new QHBoxLayout;
-    cliqueAnalyzeBtn = new QPushButton("统计各阶完全子图");
-    cliqueButtonLayout->addWidget(cliqueAnalyzeBtn);
-    cliqueButtonLayout->addStretch();
-    cliqueLayout->addLayout(cliqueButtonLayout);
 
     cliqueTable = new QTableWidget;
     cliqueTable->setColumnCount(2);
@@ -537,7 +563,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     cliqueTable->setColumnWidth(0, 100);
     cliqueLayout->addWidget(cliqueTable);
     tabWidget->addTab(cliqueWidget, "聚团分析");
-    connect(cliqueAnalyzeBtn, &QPushButton::clicked, this, &MainWindow::onCliqueAnalyzeClick);
 
     // ✅ 按钮绑定（现在才正确）
     connect(btnAuthorDesc, &QPushButton::clicked, this, [=](){
@@ -629,7 +654,7 @@ void MainWindow::onSearchClick()
     };
 
     if (!authorKey.isEmpty()) {
-        applyRecordIds(m_db.author_records_contains(toStdString(authorKey)));
+        applyRecordIds(m_db.author_records_exact(toStdString(authorKey)));
     }
     if (!titleKey.isEmpty()) {
         applyRecordIds(m_db.title_word_records(toStdString(titleKey), true));
@@ -684,6 +709,7 @@ void MainWindow::onSearchClick()
     if(searchTargetAuthor.isEmpty())
     {
         graphScene->clear(); // 没搜作者，关系图清空空白
+        clearAuthorDetail();
     }
     else
     {
@@ -729,6 +755,7 @@ void MainWindow::loadDblpXml(const QString &filePath)
     // 自动刷新关键词图表
     populateKeywordYearCombo();
     if(!m_nodes.isEmpty()) drawGraphicsBarChart();
+    showCliqueStatistics();
 }
 
 // -----------------------------------------------------------------------------
@@ -746,16 +773,6 @@ void MainWindow::filterAuthorData(const QString &targetAuthor)
             canonicalAuthor = node.name;
             targetPaperCount = node.paperCount;
             break;
-        }
-    }
-
-    if (canonicalAuthor.isEmpty()) {
-        for (const auto& node : m_nodes) {
-            if (node.name.contains(targetAuthor, Qt::CaseInsensitive)) {
-                canonicalAuthor = node.name;
-                targetPaperCount = node.paperCount;
-                break;
-            }
         }
     }
 
@@ -783,24 +800,91 @@ void MainWindow::filterAuthorData(const QString &targetAuthor)
     }
 }
 
+void MainWindow::clearAuthorDetail()
+{
+    if (authorDetailTable == nullptr) {
+        return;
+    }
+    authorDetailTable->setRowCount(0);
+}
+
+void MainWindow::showAuthorDetail(const QString& authorName)
+{
+    if (authorDetailTable == nullptr || authorName.isEmpty()) {
+        return;
+    }
+
+    int paperCount = 0;
+    for (const auto& node : m_tempNodes) {
+        if (node.name == authorName) {
+            paperCount = node.paperCount;
+            break;
+        }
+    }
+    if (paperCount == 0) {
+        for (const auto& node : m_nodes) {
+            if (node.name == authorName) {
+                paperCount = node.paperCount;
+                break;
+            }
+        }
+    }
+
+    const int coauthorCount = static_cast<int>(m_authorGraph.queryCoauthors(authorName.toStdString()).size());
+
+    QString cooperateWithCenter = "-";
+    const QString centerAuthor = m_tempNodes.isEmpty() ? QString() : m_tempNodes.first().name;
+    if (!centerAuthor.isEmpty() && authorName != centerAuthor) {
+        for (const auto& edge : m_tempEdges) {
+            const bool matched = (edge.a1 == centerAuthor && edge.a2 == authorName)
+                              || (edge.a2 == centerAuthor && edge.a1 == authorName);
+            if (matched) {
+                cooperateWithCenter = QString::number(edge.cooperateNum);
+                break;
+            }
+        }
+    }
+
+    authorDetailTable->setRowCount(4);
+    const QStringList names = {"作者姓名", "累计发文量", "直接合作者数量", "与中心作者合作次数"};
+    const QStringList values = {
+        authorName,
+        QString::number(paperCount),
+        QString::number(coauthorCount),
+        cooperateWithCenter
+    };
+
+    for (int row = 0; row < names.size(); ++row) {
+        auto *nameItem = new QTableWidgetItem(names[row]);
+        auto *valueItem = new QTableWidgetItem(values[row]);
+        nameItem->setTextAlignment(Qt::AlignCenter);
+        valueItem->setTextAlignment(Qt::AlignCenter);
+        authorDetailTable->setItem(row, 0, nameItem);
+        authorDetailTable->setItem(row, 1, valueItem);
+    }
+}
+
 // -----------------------------------------------------------------------------
 // 绘制作者合作关系图（中心辐射图）
 // -----------------------------------------------------------------------------
 void MainWindow::drawCooperationGraph()
 {
     graphScene->clear(); // 清空画布
+    clearAuthorDetail();
     // 无数据 → 显示提示
     if (m_tempNodes.isEmpty()) {
         QGraphicsTextItem* tipText = graphScene->addText("未找到该作者的合作关系，请重新搜索");
         tipText->setPos(200, 200);
-        tipText->setDefaultTextColor(Qt::gray);
+        tipText->setDefaultTextColor(Qt::black);
         return;
     }
 
     graphScene->setBackgroundBrush(Qt::white); // 白色背景
 
-    graphScene->addText(QString("当前仅显示合作次数最高的前 %1 位合作者").arg(qMax(0, m_tempNodes.size() - 1)))
-        ->setPos(20, 120);
+    QGraphicsTextItem *limitText =
+        graphScene->addText(QString("当前中心作者共有 %1 位合作者").arg(qMax(0, m_tempNodes.size() - 1)));
+    limitText->setDefaultTextColor(Qt::black);
+    limitText->setPos(20, 120);
 
     QMap<QString, QPointF> pos;       // 存储每个作者的坐标
     QMap<QString, int> degree;         // 存储每个作者的合作次数
@@ -836,10 +920,11 @@ void MainWindow::drawCooperationGraph()
         int y = centerY;
         pos[targetAuthor] = QPointF(x, y);
         // 画圆形节点
-        graphScene->addEllipse(x - 18, y - 18, 36, 36, QPen(Qt::black, 2), QBrush(QColor(255, 165, 0)));
-        // 画作者名字
-        QGraphicsTextItem *text = graphScene->addText(targetAuthor);
-        text->setPos(x - text->boundingRect().width()/2, y + 22);
+        QGraphicsEllipseItem *nodeItem =
+            graphScene->addEllipse(x - 18, y - 18, 36, 36, QPen(Qt::black, 2), QBrush(QColor(255, 165, 0)));
+        nodeItem->setData(0, targetAuthor);
+        nodeItem->setFlag(QGraphicsItem::ItemIsSelectable);
+        nodeItem->setCursor(Qt::PointingHandCursor);
     }
 
     // --------------------------
@@ -860,9 +945,11 @@ void MainWindow::drawCooperationGraph()
         pos[name] = QPointF(x, y);
 
         // 画合作者节点
-        graphScene->addEllipse(x - 10, y - 10, 20, 20, QPen(Qt::darkGray), QBrush(QColor(100, 200, 255, 180)));
-        QGraphicsTextItem *text = graphScene->addText(name);
-        text->setPos(x - text->boundingRect().width()/2, y + 15);
+        QGraphicsEllipseItem *nodeItem =
+            graphScene->addEllipse(x - 10, y - 10, 20, 20, QPen(Qt::darkGray), QBrush(QColor(100, 200, 255, 180)));
+        nodeItem->setData(0, name);
+        nodeItem->setFlag(QGraphicsItem::ItemIsSelectable);
+        nodeItem->setCursor(Qt::PointingHandCursor);
     }
 
     // --------------------------
@@ -898,11 +985,21 @@ void MainWindow::drawCooperationGraph()
     // --------------------------
     graphScene->addRect(20, 20, 160, 90, QPen(Qt::black), QColor(255, 255, 255, 230));
     graphScene->addEllipse(30, 30, 15, 10, QPen(), Qt::red);
-    graphScene->addText("强关联 ≥4次")->setPos(55, 25);
+    QGraphicsTextItem *strongText = graphScene->addText("强关联 ≥4次");
+    strongText->setDefaultTextColor(Qt::black);
+    strongText->setPos(55, 25);
     graphScene->addEllipse(30, 50, 15, 10, QPen(), Qt::blue);
-    graphScene->addText("一般关联 2-3次")->setPos(55, 45);
+    QGraphicsTextItem *normalText = graphScene->addText("一般关联 2-3次");
+    normalText->setDefaultTextColor(Qt::black);
+    normalText->setPos(55, 45);
     graphScene->addEllipse(30, 70, 15, 10, QPen(), Qt::lightGray);
-    graphScene->addText("弱关联 1次")->setPos(55, 65);
+    QGraphicsTextItem *weakText = graphScene->addText("弱关联 1次");
+    weakText->setDefaultTextColor(Qt::black);
+    weakText->setPos(55, 65);
+
+    if (!m_tempNodes.isEmpty()) {
+        showAuthorDetail(m_tempNodes.first().name);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -1074,22 +1171,24 @@ void MainWindow::showAuthorRankTable(bool desc)
     authorTable->setColumnWidth(2, 120);   // 累计发文量列 缩小一点
 }
 
-void MainWindow::onCliqueAnalyzeClick()
-{
-    showCliqueStatistics();
-}
-
 void MainWindow::showCliqueStatistics()
 {
-    if (cliqueTable == nullptr || cliqueAnalyzeBtn == nullptr) {
+    if (cliqueTable == nullptr) {
         return;
     }
 
-    cliqueAnalyzeBtn->setEnabled(false);
-    cliqueAnalyzeBtn->setText("统计中...");
     cliqueTable->setRowCount(0);
 
     const std::vector<std::uint64_t> counts = m_authorGraph.countCliquesByOrder();
+    if (counts.empty()) {
+        cliqueTable->insertRow(0);
+        cliqueTable->setItem(0, 0, new QTableWidgetItem("-"));
+        cliqueTable->setItem(0, 1, new QTableWidgetItem("缺少聚团统计，请重新运行 index_builder.exe 构建索引"));
+        cliqueTable->item(0, 0)->setTextAlignment(Qt::AlignCenter);
+        cliqueTable->item(0, 1)->setTextAlignment(Qt::AlignCenter);
+        cliqueTable->resizeRowsToContents();
+        return;
+    }
 
     for (size_t order = 1; order < counts.size(); ++order) {
         if (counts[order] == 0) {
@@ -1104,8 +1203,6 @@ void MainWindow::showCliqueStatistics()
     }
 
     cliqueTable->resizeRowsToContents();
-    cliqueAnalyzeBtn->setText("统计各阶完全子图");
-    cliqueAnalyzeBtn->setEnabled(true);
 }
 
 // --------------------------

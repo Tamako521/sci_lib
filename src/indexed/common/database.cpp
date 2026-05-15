@@ -3,9 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
-#include <functional>
-#include <queue>
-#include <set>
 #include <type_traits>
 
 namespace indexed {
@@ -70,6 +67,7 @@ bool Database::open(const std::filesystem::path& index_dir)
     }
     load_stats();
     load_graph();
+    load_clique_stats();
     articles_.open(index_dir_ / "articles.dat", std::ios::binary);
     return articles_.is_open();
 }
@@ -197,6 +195,11 @@ bool Database::load_graph()
         }
     }
     return true;
+}
+
+bool Database::load_clique_stats()
+{
+    return format::read_vector_file(index_dir_ / "clique_stats.dat", clique_counts_);
 }
 
 std::size_t Database::size() const
@@ -476,104 +479,7 @@ std::vector<std::pair<std::string, std::size_t>> Database::author_paper_counts()
 
 std::vector<std::uint64_t> Database::count_cliques_by_order() const
 {
-    const int node_count = static_cast<int>(graph_.size());
-    std::vector<std::uint64_t> counts(2, 0);
-    counts[1] = static_cast<std::uint64_t>(node_count);
-    std::unordered_map<std::uint32_t, int> index;
-    index.reserve(graph_.size());
-    int next = 0;
-    for (const auto& item : graph_) {
-        index[item.first] = next++;
-    }
-    std::vector<std::vector<int>> neighbors(static_cast<std::size_t>(node_count));
-    for (const auto& [author_id, list] : graph_) {
-        const int i = index[author_id];
-        for (const auto& n : list) {
-            auto it = index.find(n.author_id);
-            if (it != index.end()) {
-                neighbors[static_cast<std::size_t>(i)].push_back(it->second);
-            }
-        }
-    }
-    for (auto& list : neighbors) {
-        std::sort(list.begin(), list.end());
-    }
-
-    std::vector<int> order;
-    std::vector<int> degree(static_cast<std::size_t>(node_count));
-    std::vector<bool> removed(static_cast<std::size_t>(node_count));
-    std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, std::greater<>> queue;
-    for (int i = 0; i < node_count; ++i) {
-        degree[static_cast<std::size_t>(i)] = static_cast<int>(neighbors[static_cast<std::size_t>(i)].size());
-        queue.push({ degree[static_cast<std::size_t>(i)], i });
-    }
-    while (!queue.empty()) {
-        const auto [deg, node] = queue.top();
-        queue.pop();
-        if (removed[static_cast<std::size_t>(node)] || deg != degree[static_cast<std::size_t>(node)]) {
-            continue;
-        }
-        removed[static_cast<std::size_t>(node)] = true;
-        order.push_back(node);
-        for (int n : neighbors[static_cast<std::size_t>(node)]) {
-            if (!removed[static_cast<std::size_t>(n)]) {
-                --degree[static_cast<std::size_t>(n)];
-                queue.push({ degree[static_cast<std::size_t>(n)], n });
-            }
-        }
-    }
-    std::vector<int> rank_of_node(static_cast<std::size_t>(node_count));
-    for (int rank = 0; rank < node_count; ++rank) {
-        rank_of_node[static_cast<std::size_t>(order[static_cast<std::size_t>(rank)])] = rank;
-    }
-    std::vector<std::vector<int>> forward(static_cast<std::size_t>(node_count));
-    for (int rank = 0; rank < node_count; ++rank) {
-        const int node = order[static_cast<std::size_t>(rank)];
-        for (int n : neighbors[static_cast<std::size_t>(node)]) {
-            const int neighbor_rank = rank_of_node[static_cast<std::size_t>(n)];
-            if (rank < neighbor_rank) {
-                forward[static_cast<std::size_t>(rank)].push_back(neighbor_rank);
-            }
-        }
-        std::sort(forward[static_cast<std::size_t>(rank)].begin(), forward[static_cast<std::size_t>(rank)].end());
-    }
-    auto add_count = [&](std::size_t order_size) {
-        if (counts.size() <= order_size) {
-            counts.resize(order_size + 1);
-        }
-        ++counts[order_size];
-    };
-    auto intersect_tail = [](const std::vector<int>& candidates, std::size_t start, const std::vector<int>& ns) {
-        std::vector<int> out;
-        std::size_t i = start;
-        std::size_t j = 0;
-        while (i < candidates.size() && j < ns.size()) {
-            if (candidates[i] == ns[j]) {
-                out.push_back(candidates[i]);
-                ++i;
-                ++j;
-            } else if (candidates[i] < ns[j]) {
-                ++i;
-            } else {
-                ++j;
-            }
-        }
-        return out;
-    };
-    auto dfs = [&](auto&& self, const std::vector<int>& candidates, std::size_t current_size) -> void {
-        for (std::size_t i = 0; i < candidates.size(); ++i) {
-            const int node = candidates[i];
-            add_count(current_size + 1);
-            auto next_candidates = intersect_tail(candidates, i + 1, forward[static_cast<std::size_t>(node)]);
-            if (!next_candidates.empty()) {
-                self(self, next_candidates, current_size + 1);
-            }
-        }
-    };
-    for (int rank = 0; rank < node_count; ++rank) {
-        dfs(dfs, forward[static_cast<std::size_t>(rank)], 1);
-    }
-    return counts;
+    return clique_counts_;
 }
 
 std::string Database::normalize(const std::string& value)

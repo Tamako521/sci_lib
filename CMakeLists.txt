@@ -22,7 +22,6 @@ endif()
 set(COMMON_SOURCES
     src/indexed/common/string_pool.cpp
     src/indexed/common/xml_value.cpp
-    src/indexed/common/serializer.cpp
     src/indexed/common/database.cpp
 )
 
@@ -30,7 +29,6 @@ set(COMMON_HEADERS
     src/index/index_format.hpp
     src/indexed/common/string_pool.hpp
     src/indexed/common/xml_value.hpp
-    src/indexed/common/serializer.hpp
     src/indexed/common/database.hpp
 )
 

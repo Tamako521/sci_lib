@@ -71,6 +71,7 @@ private:
     bool load_lookup_files();
     bool load_stats();
     bool load_graph();
+    bool load_clique_stats();
     std::vector<std::uint32_t> read_posting(const std::string& file, Dir dir) const;
     std::optional<XmlValue> read_article_at(format::ArticleOffset offset) const;
     static std::string normalize(const std::string& value);
@@ -98,6 +99,7 @@ private:
     std::vector<AuthorStat> top_author_stats_;
     YearKeywordTop yearly_keywords_;
     std::unordered_map<std::uint32_t, std::vector<format::WeightedNeighbor>> graph_;
+    std::vector<std::uint64_t> clique_counts_;
 
     mutable std::ifstream articles_;
     mutable std::optional<XmlValue> last_found_;

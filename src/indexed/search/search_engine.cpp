@@ -43,7 +43,7 @@ std::vector<SearchResult> SearchEngine::make_results(const std::vector<std::uint
 
 std::vector<SearchResult> SearchEngine::search_by_author(const std::string& author) const
 {
-    auto ids = db_->author_records_contains(trim_copy(author));
+    auto ids = db_->author_records_exact(trim_copy(author));
     return make_results(ids, "author", author);
 }
 
