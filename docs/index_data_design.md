@@ -2,7 +2,7 @@
 
 ## 1. 背景
 
-当前程序运行时会通过 `Database::load()` 加载 `dblp.xml` 或 `articles.dat`，并把所有论文记录反序列化到内存中的 `records_`。虽然 `articles.dat` 避免了每次重新解析 XML，但没有解决全量数据常驻内存的问题。GUI 构造阶段还会同步构建搜索、统计和作者合作图相关数据，因此完整 DBLP 数据下容易出现启动慢、内存高、界面卡顿。
+旧版程序运行时会通过 `Database::load()` 加载 `dblp.xml` 或 `articles.dat`，并把所有论文记录反序列化到内存中的 `records_`。虽然旧版 `articles.dat` 避免了每次重新解析 XML，但没有解决全量数据常驻内存的问题。GUI 构造阶段还会同步构建搜索、统计和作者合作图相关数据，因此完整 DBLP 数据下容易出现启动慢、内存高、界面卡顿。
 
 本次改造目标是把底层数据存取方式从“全量加载到内存”改为“离线构建索引、运行时加载轻量索引、按需读取论文详情”。
 
@@ -62,9 +62,9 @@ indexed::Database / indexed::SearchEngine
 indexed::StatisticsAnalyzer / indexed::AuthorGraph
 ```
 
-新增代码集中放在 `src/index` 和 `src/indexed` 下。原 `src/common`、`src/search`、`src/analysis`、`src/graph`、`src/gui` 只作为参考和对照，暂时保留。
+新增代码集中放在 `src/index`、`src/common`、`src/search`、`src/analysis`、`src/graph`、`src/gui` 下。`indexed` 命名空间仍用于区分索引版实现，但不再使用 `src/indexed/` 目录。
 
-新旧模块中负责相同功能的类名保持一致，但新模块放入 `indexed` 命名空间，避免 C++ 同名冲突。
+负责相同功能的类名保持原名，但放入 `indexed` 命名空间，表示当前索引版实现。
 
 ## 5. 代码结构
 
@@ -76,40 +76,38 @@ src/index/
   index_writer.cpp
   index_format.hpp
 
-src/indexed/common/
+src/common/
   database.hpp
   database.cpp
-  serializer.hpp
-  serializer.cpp
   string_pool.hpp
   string_pool.cpp
   xml_value.hpp
   xml_value.cpp
 
-src/indexed/search/
+src/search/
   search_engine.hpp
   search_engine.cpp
 
-src/indexed/analysis/
+src/analysis/
   statistics_analyzer.hpp
   statistics_analyzer.cpp
 
-src/indexed/graph/
+src/graph/
   AuthorGraph.hpp
   AuthorGraph.cpp
 
-src/indexed/gui/
+src/gui/
   mainwindow.h
   mainwindow.cpp
   qcustomplot.h
   qcustomplot.cpp
 ```
 
-`src/indexed/gui/` 中的 GUI 代码形式与原 `src/gui/` 保持一致，直接参考/拷贝原 GUI 后做必要修改，不引入复杂 adapter，不做大规模 GUI 架构重构。
+`src/gui/` 中的 GUI 代码形式与原 GUI 保持一致，只做必要修改，不引入复杂 adapter，不做大规模 GUI 架构重构。
 
 必要修改包括：
 
-- include 路径改到 `src/indexed`。
+- include 路径使用 `src/common`、`src/search`、`src/analysis`、`src/graph`、`src/gui`。
 - `Database`、`SearchEngine`、`StatisticsAnalyzer`、`AuthorGraph` 使用 `indexed` 命名空间下同名类。
 - 启动时检测 `data/index/manifest.bin`。
 - 缺少索引时弹窗提示运行 `index_builder.exe`。
@@ -342,10 +340,10 @@ author_id -> [(coauthor_id, weight)]
 保存 F6 聚团分析的预计算结果：
 
 ```text
-counts[k] = k 阶完全子图数量，第一版限制统计到 8 阶
+counts[k] = k 阶完全子图数量，第一版限制统计到 7 阶
 ```
 
-文件只保存各阶数量，不保存额外元信息。`index_builder.exe` 在构建合作图后统计 1 到 8 阶完全子图数量，并写入该文件。GUI 启动时读取该文件并预填聚团分析表格。
+文件只保存各阶数量，不保存额外元信息。`index_builder.exe` 在构建合作图后统计 1 到 7 阶完全子图数量，并写入该文件。GUI 启动时读取该文件并预填聚团分析表格。
 
 如果旧索引缺少 `clique_stats.dat`，GUI 其他功能照常使用，聚团分析表格显示：
 
@@ -402,17 +400,19 @@ GUI 启动时：
 6. 主界面可操作
 ```
 
-GUI 不再执行：
+GUI 不再执行旧版全量加载：
 
 ```cpp
 m_db.load("dblp.xml");
 m_authorGraph.buildGraph(m_db);
 ```
 
+当前 `AuthorGraph::buildGraph(m_db)` 只是绑定已打开的索引数据库指针，不再从全量论文记录现场建图。
+
 搜索时：
 
 ```text
-SearchEngine 查询索引 -> record_id 列表
+SearchEngine 或 GUI 直接调用 Database 查询索引 -> record_id 列表
 分页取 100 条
 Database 按 record_id 批量读取 articles.dat
 GUI 填表
@@ -447,7 +447,7 @@ F6 不在 GUI 启动时或点击时计算。统计发生在 `index_builder.exe` 
 
 - 新增 `index_builder.exe`。
 - 新增 `src/index/*`。
-- 新增 `src/indexed/common/database.*`。
+- 新增索引版 `src/common/database.*`。
 - 生成并检测 `manifest.bin`。
 - GUI 启动改为检测索引。
 - 缺失索引时弹窗提示运行 `index_builder.exe`。
@@ -486,7 +486,7 @@ F6 不在 GUI 启动时或点击时计算。统计发生在 `index_builder.exe` 
 
 ### 阶段 6：F6 聚团分析
 
-- 基于构建期的作者合作图实现 1 到 8 阶完全子图计数。
+- 基于构建期的作者合作图实现 1 到 7 阶完全子图计数。
 - 将结果写入 `clique_stats.dat`。
 - `Database` 读取 `clique_stats.dat`。
 - GUI 聚团分析 tab 只显示：
@@ -512,19 +512,13 @@ F6 不在 GUI 启动时或点击时计算。统计发生在 `index_builder.exe` 
 
 处理：构建器输出摘要信息，包括记录数、作者数、标题词数量、合作边数量、各文件大小等。
 
-### 10.3 新旧同名类冲突
+### 10.3 命名空间与目录含义混淆
 
-风险：旧模块和新模块都存在 `Database`、`SearchEngine`、`StatisticsAnalyzer`、`AuthorGraph`。
+风险：当前代码使用 `namespace indexed`，但文件已经从 `src/indexed/` 移到 `src/common`、`src/search`、`src/analysis`、`src/graph`、`src/gui`，容易误以为目录仍存在。
 
-处理：新模块放在 `namespace indexed`，GUI 显式使用 `indexed::`。
+处理：文档和工程文件统一使用当前目录；`indexed` 只表示索引版逻辑命名空间。
 
-### 10.4 GUI 迁移期间结果不一致
-
-风险：新旧搜索或统计结果不一致。
-
-处理：旧模块暂时保留，用对照测试验证同一查询的结果数量和前若干条。
-
-### 10.5 F6 聚团分析仍然慢
+### 10.4 F6 聚团分析仍然慢
 
 风险：统计所有完全子图本身可能组合爆炸。
 
@@ -545,9 +539,9 @@ F6 不在 GUI 启动时或点击时计算。统计发生在 `index_builder.exe` 
 - 完整论文记录写入 `articles.dat`，按 `record_id` 随机读取。
 - 内部使用递增 `record_id`，同时保留 `key -> record_id`。
 - 搜索、统计和图功能语义参考现有模块，不重新设计业务功能。
-- 新建 `src/indexed` 模块，旧模块暂时保留用于对照。
+- 索引版模块直接放入 `src/common`、`src/search`、`src/analysis`、`src/graph`、`src/gui`。
 - 新模块类名保持旧类名，但放入 `indexed` 命名空间。
-- 新增 `src/indexed/gui/`，GUI 代码形式参考原 `src/gui/`，直接拷贝后小改。
+- GUI 代码形式参考原 `src/gui/`，直接小改。
 - 搜索结果分页显示，每页默认 100 条。
 - GUI 启动目标为索引存在时 5 秒内可操作。
 - GUI 运行内存尽量控制在 1GB 以内。

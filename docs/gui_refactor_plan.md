@@ -1,238 +1,238 @@
-# GUI 开发修改步骤与原则
+# GUI 开发与维护说明
+
+本文档说明当前 GUI 的结构、调用关系和后续修改原则。当前 GUI 已经接入索引化数据层，不再负责解析 XML、构建搜索索引、统计作者或现场计算聚团。
+
+---
 
 ## 一、开发原则
 
-1. **GUI 只负责界面**
+1. **GUI 只负责界面和交互**
 
-   `src/gui` 只做输入、按钮、表格、图表、弹窗和用户提示，不再自己实现数据解析、搜索、统计、建图算法。
+   `src/gui` 负责输入框、按钮、表格、图表、弹窗和图形展示，不在 GUI 中实现大规模数据解析或全局统计。
 
-2. **功能逻辑统一调用 `src`**
+2. **功能逻辑统一调用索引版模块**
 
-   已经在 `src` 中实现的功能，GUI 必须优先调用：
+   GUI 优先调用：
 
-   - 数据加载：`Database`
-   - 搜索：`SearchEngine`
-   - 作者统计、关键词统计：`StatisticsAnalyzer`
-   - 作者合作图、聚团分析：`AuthorGraph`
+   - 数据读取：`indexed::Database`
+   - 搜索：`indexed::SearchEngine`
+   - 作者统计、关键词统计：`indexed::StatisticsAnalyzer`
+   - 作者合作图、聚团统计：`indexed::AuthorGraph`
 
-3. **保留现有 Qt Widgets**
+3. **GUI 不构建索引**
 
-   不切换 QML，不大规模重写界面。优先在当前代码基础上整理和美化，降低风险。
+   如果 `data/index/manifest.bin` 不存在，GUI 只弹窗提示：
 
-4. **逐步修改，每步都能编译运行**
+   ```text
+   未检测到索引，请先运行 index_builder.exe 构建索引。
+   ```
 
-   不一次性大改。每完成一个功能点，就用 qmake 或 CMake 编译一次，确保 GUI 可运行。
+   不在 GUI 中解析 `dblp.xml`，也不调用 `IndexBuilder`。
 
-5. **课程验收优先**
+4. **避免主界面卡死**
 
-   优先保证 F1-F7 功能完整、稳定、可演示。界面美化以清晰、易用为主，不追求复杂视觉效果。
+   搜索、统计、合作图和聚团分析都应读取索引或预计算结果。不要在按钮点击中执行全库扫描、全图聚团枚举等高耗时任务。
 
-6. **避免主界面卡死**
+5. **保留 Qt Widgets**
 
-   大数据操作要谨慎。不要在普通按钮中直接执行全局聚团分析等高耗时操作。
+   当前使用 Qt Widgets 和 QCustomPlot，不切换 QML，不大规模重写界面。
 
-7. **减少重复数据**
+6. **每次修改后编译验证**
 
-   GUI 中不要长期维护和 `src` 重复的数据结构。后续应逐步减少 `m_allPaper`、`m_nodes`、`m_edges` 这类缓存。
+   修改 GUI 后至少验证：
 
----
+   ```text
+   qmake sci_lib.pro -spec win32-g++ CONFIG+=release
+   mingw32-make -f Makefile.Release
+   ```
 
-## 二、GUI 修改步骤
-
-### Step 1：清理旧模板代码
-
-删除或整理 GUI 中已经无用的遗留内容：
-
-- 删除不用的 include，例如 `QXmlStreamReader`、`QFile`、`QRandomGenerator` 等。
-- 删除未实现或未使用的函数声明，例如 `drawAuthorRankChart()`、`showAllPapers()`。
-- 删除未使用成员，例如 `monthInput`。
-- 修正误导性注释，例如不要再写“兼容 DBLP 所有文献类型”。
-
-目标：让 GUI 代码更干净，避免后续维护混乱。
+   本项目在 Windows 下应优先使用 Qt 自带 MinGW，避免和其他 MinGW 版本混用。
 
 ---
 
-### Step 2：整理数据加载
+## 二、当前 GUI 结构
 
-GUI 数据加载统一使用：
+主窗口位于：
 
-```cpp
-Database::load()
+```text
+src/gui/mainwindow.h
+src/gui/mainwindow.cpp
 ```
 
-要求：
+主要控件：
 
-- GUI 不再直接解析 XML。
-- 加载失败时弹出中文错误提示。
-- 缺失字段不要直接显示 `<missing_string>`。
+| 控件 / 成员 | 作用 |
+|------------|------|
+| `authorInput` | 作者搜索输入 |
+| `titleInput` | 标题搜索输入 |
+| `keywordInput` | 标题关键词输入 |
+| `journalInput` | 期刊过滤 |
+| `volumeInput` | 卷号过滤 |
+| `yearInput` | 年份过滤 |
+| `resultTable` | 文献搜索结果 |
+| `graphView / graphScene` | 作者合作关系图 |
+| `authorDetailTable` | 合作图右侧作者详情表 |
+| `barChartPlot` | 年度关键词柱状图 |
+| `authorTable` | 发文量前 100 作者 |
+| `cliqueTable` | 聚团分析结果 |
 
-目标：GUI 只从 `Database` 获取数据。
+核心数据成员：
+
+| 成员 | 作用 |
+|------|------|
+| `indexed::Database m_db` | 索引数据入口 |
+| `indexed::StatisticsAnalyzer m_stats` | 统计接口 |
+| `indexed::AuthorGraph m_authorGraph` | 合作图接口 |
+| `std::unique_ptr<indexed::SearchEngine> m_search` | 搜索接口 |
+| `m_nodes` | 作者发文量缓存，用于合作图详情 |
+| `m_tempNodes / m_tempEdges` | 当前合作图绘制数据 |
 
 ---
 
-### Step 3：整理搜索功能
+## 三、启动流程
 
-搜索功能优先调用：
+当前启动流程：
 
-```cpp
-SearchEngine::search_by_author()
-SearchEngine::search_by_title()
-SearchEngine::search_by_keyword()
-SearchEngine::search_by_keywords()
+```text
+MainWindow()
+  -> 创建搜索区、结果表、合作图、统计页、聚团页
+  -> loadDblpXml("data/index")
+       -> Database::has_index()
+       -> Database::open()
+       -> m_search = SearchEngine(&m_db)
+       -> m_authorGraph.buildGraph(m_db)
+       -> m_nodes = m_db.author_paper_counts()
+       -> populateKeywordYearCombo()
+       -> drawGraphicsBarChart()
+       -> showCliqueStatistics()
 ```
 
-建议：
-
-- 作者搜索调用 `search_by_author()`。
-- 标题搜索调用 `search_by_title()` 或关键词模糊搜索。
-- 关键词搜索调用 `search_by_keyword()`。
-- 年份、期刊、卷号可以暂时在 GUI 层过滤。
-
-目标：搜索主逻辑由 `SearchEngine` 负责。
+注意：`loadDblpXml()` 是历史遗留函数名，当前实际加载的是索引目录。
 
 ---
 
-### Step 4：优化搜索结果展示
+## 四、搜索结果页面
 
-当前搜索结果可以继续使用列表，但建议改成表格。
+搜索按钮触发 `onSearchClick()`。
 
-推荐列：
+搜索逻辑：
 
-- 标题
-- 作者
-- 年份
-- 期刊
-- 链接
+1. 读取作者、标题、关键词、期刊、卷号、年份输入。
+2. 各条件分别查询索引，得到 `record_id` 集合。
+3. 多条件之间取交集。
+4. 最多显示前 100 条。
+5. 使用 `Database::read_article(record_id)` 按需读取文章。
+6. 填充 `resultTable`。
 
-点击某一行后，弹出论文详情。
+搜索结果列：
 
-目标：让搜索结果更清晰，方便演示。
-
----
-
-### Step 5：整理论文详情弹窗
-
-论文详情不要再以伪 XML 为主展示，建议改为字段式展示：
-
-- 标题
-- 作者
-- 年份
-- 期刊
-- 卷号
-- 月份
-- 文献链接
-
-保留“打开文献链接”按钮。
-
-目标：详情信息更容易阅读。
-
----
-
-### Step 6：整理作者合作图
-
-作者合作关系统一调用：
-
-```cpp
-AuthorGraph::queryCoauthors()
+```text
+标题 | 作者 | 年份 | 期刊 | 链接
 ```
 
-要求：
-
-- 不再由 GUI 自己统计合作边。
-- 作者不存在时显示提示。
-- 合作者太多时只展示 Top N，例如 Top 20 或 Top 30。
-- 边的粗细或颜色可以根据合作次数区分。
-
-目标：合作图由 `AuthorGraph` 提供数据，GUI 只负责绘制。
+双击搜索结果行会弹出论文详情。
 
 ---
 
-### Step 7：接入作者统计
+## 五、作者合作关系图
 
-作者发文排名统一调用：
+作者合作图位于“作者合作关系图”tab。
 
-```cpp
-StatisticsAnalyzer::top_authors()
+当前布局：
+
+```text
+左侧 3/4：QGraphicsView 合作图
+右侧 1/4：作者详情表
 ```
 
-要求：
+绘图流程：
 
-- 显示前 100 名作者。
-- 支持升序、降序切换。
-- 表格列宽清晰，不要挤在一起。
+```text
+filterAuthorData(author)
+  -> 查找中心作者
+  -> AuthorGraph::queryCoauthors()
+  -> 取合作次数最高的前 30 位合作者
+  -> 填充 m_tempNodes / m_tempEdges
 
-目标：作者统计不再由 GUI 自己计算。
-
----
-
-### Step 8：接入关键词热点分析
-
-关键词统计统一调用：
-
-```cpp
-StatisticsAnalyzer::yearly_hot_keywords()
+drawCooperationGraph()
+  -> 绘制中心节点和外围节点
+  -> 根据合作次数绘制不同颜色边
+  -> 绘制图例
+  -> 默认显示中心作者详情
 ```
 
-建议：
+作者详情表字段：
 
-- 增加年份选择框。
-- 选择某一年后显示该年份 Top10 关键词。
-- 图表标题中显示当前年份。
-
-目标：让“每年关键词 Top10”真正按年份展示。
-
----
-
-### Step 9：接入聚团分析
-
-聚团分析优先调用：
-
-```cpp
-AuthorGraph::findLocalCliques()
+```text
+作者姓名
+累计发文量
+直接合作者数量
+与中心作者合作次数
 ```
 
-不建议默认调用：
+点击节点后通过 `showAuthorDetail(authorName)` 刷新右侧详情表。节点下方不显示作者姓名，避免图中标签拥挤。
+
+---
+
+## 六、统计图表
+
+### 6.1 作者排名
+
+作者排名调用：
 
 ```cpp
-AuthorGraph::findCliques()
+m_stats.top_authors(m_db, 100)
 ```
 
-原因：全局聚团分析在大数据下可能很慢，容易卡死界面。
+GUI 展示：
 
-建议界面：
+```text
+排名 | 作者姓名 | 累计发文量
+```
 
-- 输入作者名。
-- 点击“局部聚团分析”。
-- 表格显示聚团人数和成员列表。
+支持升序和降序按钮切换。
 
-目标：让当前空白聚团页面变成可演示功能。
+### 6.2 年度标题关键词
 
----
+关键词统计调用：
 
-### Step 10：轻量美化界面
+```cpp
+m_stats.yearly_hot_keywords(m_db, 10)
+```
 
-建议做以下简单优化：
-
-- 顶部功能按钮样式统一。
-- 输入框按功能分组排列。
-- 搜索按钮和清空按钮更明显。
-- 表格开启整行选择。
-- 空结果时显示“未找到相关文献”。
-- 作者不存在时显示“未找到该作者”。
-- 数据加载失败时显示明确错误提示。
-
-目标：界面更清晰、更适合课程展示。
+GUI 提供年份下拉框，选择年份后用 QCustomPlot 绘制 Top10 柱状图。
 
 ---
 
-## 三、推荐实施顺序
+## 七、聚团分析
 
-1. 清理无用代码和旧注释。
-2. 完善搜索结果展示。
-3. 优化论文详情弹窗。
-4. 删除 GUI 自己维护合作边的逻辑。
-5. 合作图限制 Top N 作者。
-6. 关键词统计增加年份选择。
-7. 聚团页接入 `findLocalCliques()`。
-8. 统一界面样式。
-9. 完整测试 F1-F7。
+聚团分析 tab 只显示结果表：
+
+```text
+阶数 | 完全子图个数
+```
+
+调用关系：
+
+```cpp
+m_authorGraph.countCliquesByOrder()
+```
+
+该接口读取构建期写入的 `clique_stats.dat`，GUI 不现场计算完全子图。
+
+如果缺少聚团统计文件，表格显示：
+
+```text
+- | 缺少聚团统计，请重新运行 index_builder.exe 构建索引
+```
+
+---
+
+## 八、后续修改清单
+
+1. 保持 GUI 只读索引，不新增运行时全库扫描。
+2. 新增搜索条件时，优先在 `Database` 中增加索引接口，再接 GUI。
+3. 修改作者合作图时，保持最多展示 Top N 合作者，避免图过密。
+4. 修改聚团分析时，优先改 `index_builder` 的预计算逻辑，不在 GUI 中计算。
+5. 修改路径时同步更新 `sci_lib.pro`、`CMakeLists.txt` 和本文档。
+6. 修改表格列名或展示字段时，同步更新 `readme.md` 和 `design.md` 中的功能描述。

@@ -2,8 +2,8 @@
 
 #include "index/index_format.hpp"
 #include "index/index_writer.hpp"
-#include "indexed/common/string_pool.hpp"
-#include "indexed/common/xml_value.hpp"
+#include "common/string_pool.hpp"
+#include "common/xml_value.hpp"
 
 #include <cstdint>
 #include <filesystem>

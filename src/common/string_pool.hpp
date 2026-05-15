@@ -1,32 +1,26 @@
-#ifndef STRING_POOL_HPP
-#define STRING_POOL_HPP
+#pragma once
 
-#include <string>
-#include <vector>
-#include <unordered_map>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
-class StringPool{
-private:
-    std::vector<std::string>                 strings_;//ID-->字符串
-    std::unordered_map<std::string,uint32_t> id_map_;//字符串-->ID
-    size_t total_bytes_=0;
+namespace indexed {
 
+class StringPool {
 public:
-    StringPool() =default;
-    ~StringPool()=default;
+    std::uint32_t intern(const std::string& value);
+    void add_loaded(std::string value);
+    const std::string& get(std::uint32_t id) const;
+    std::uint32_t find(const std::string& value) const;
+    std::size_t size() const;
+    const std::vector<std::string>& all_strings() const;
+    void reserve(std::size_t count);
 
-    uint32_t intern(const std::string& s);//写入
-    const std::string& get(uint32_t id) const;//读取
-
-    //元信息
-    size_t size() const;
-    size_t total_bytes() const;
-
-    //序列化使用
-    const std::vector<std::string>& all_strings() const;//返回stringPool
-    void reserve(size_t count);
+private:
+    std::vector<std::string> strings_;
+    std::unordered_map<std::string, std::uint32_t> ids_;
 };
 
-#endif
+} // namespace indexed

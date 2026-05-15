@@ -20,16 +20,16 @@ endif()
 # ============================================================================
 # 1. 先收集所有的源文件 (.cpp)
 set(COMMON_SOURCES
-    src/indexed/common/string_pool.cpp
-    src/indexed/common/xml_value.cpp
-    src/indexed/common/database.cpp
+    src/common/string_pool.cpp
+    src/common/xml_value.cpp
+    src/common/database.cpp
 )
 
 set(COMMON_HEADERS
     src/index/index_format.hpp
-    src/indexed/common/string_pool.hpp
-    src/indexed/common/xml_value.hpp
-    src/indexed/common/database.hpp
+    src/common/string_pool.hpp
+    src/common/xml_value.hpp
+    src/common/database.hpp
 )
 
 # 3. 构建库：同时传入源文件和头文件
@@ -44,11 +44,11 @@ target_include_directories(common PUBLIC
 # 分析库: analysis
 # ============================================================================
 set(ANALYSIS_SOURCES
-    src/indexed/analysis/statistics_analyzer.cpp
+    src/analysis/statistics_analyzer.cpp
 )
 
 set(ANALYSIS_HEADERS
-    src/indexed/analysis/statistics_analyzer.hpp
+    src/analysis/statistics_analyzer.hpp
 )
 
 add_library(analysis STATIC ${ANALYSIS_SOURCES} ${ANALYSIS_HEADERS})
@@ -69,20 +69,20 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets PrintSupport)
 
 set(GUI_SOURCES
     main.cpp
-    src/indexed/gui/mainwindow.cpp
-    src/indexed/gui/mainwindow.h
-    src/indexed/gui/qcustomplot.cpp
-    src/indexed/gui/qcustomplot.h
-    src/indexed/search/search_engine.cpp
-    src/indexed/search/search_engine.hpp
-    src/indexed/graph/AuthorGraph.cpp
-    src/indexed/graph/AuthorGraph.hpp
+    src/gui/mainwindow.cpp
+    src/gui/mainwindow.h
+    src/gui/qcustomplot.cpp
+    src/gui/qcustomplot.h
+    src/search/search_engine.cpp
+    src/search/search_engine.hpp
+    src/graph/AuthorGraph.cpp
+    src/graph/AuthorGraph.hpp
 )
 
 add_executable(sci_lib ${GUI_SOURCES})
 target_include_directories(sci_lib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/indexed/gui
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
 )
 target_compile_definitions(sci_lib PRIVATE
     LITERATURE_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
@@ -100,12 +100,12 @@ add_executable(index_builder
     src/index/index_writer.cpp
     src/index/index_writer.hpp
     src/index/index_format.hpp
-    src/indexed/common/string_pool.cpp
-    src/indexed/common/string_pool.hpp
-    src/indexed/common/xml_value.cpp
-    src/indexed/common/xml_value.hpp
-    src/indexed/common/database.cpp
-    src/indexed/common/database.hpp
+    src/common/string_pool.cpp
+    src/common/string_pool.hpp
+    src/common/xml_value.cpp
+    src/common/xml_value.hpp
+    src/common/database.cpp
+    src/common/database.hpp
 )
 target_include_directories(index_builder PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

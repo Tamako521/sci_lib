@@ -1,7 +1,7 @@
 #pragma once
 
 #include "index/index_format.hpp"
-#include "indexed/common/string_pool.hpp"
+#include "common/string_pool.hpp"
 
 #include <cstdint>
 #include <filesystem>

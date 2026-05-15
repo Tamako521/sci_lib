@@ -1,0 +1,11 @@
+release/main.o
+release/mainwindow.o
+release/qcustomplot.o
+release/string_pool.o
+release/xml_value.o
+release/database.o
+release/statistics_analyzer.o
+release/search_engine.o
+release/AuthorGraph.o
+release/moc_mainwindow.o
+release/moc_qcustomplot.o

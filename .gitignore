@@ -50,14 +50,11 @@ RelWithDebInfo/
 MinSizeRel/
 
 # C/C++ build artifacts
-*.o
 *.obj
 *.a
-*.lib
 *.so
 *.dll
 *.dylib
-*.exe
 *.pdb
 *.ilk
 *.idb
@@ -81,3 +78,5 @@ desktop.ini
 DBLPQuickBrowser-master
 
 data
+
+
