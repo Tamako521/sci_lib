@@ -22,4 +22,5 @@ HEADERS += \
     src/index/index_format.hpp \
     src/common/string_pool.hpp \
     src/common/xml_value.hpp \
-    src/common/database.hpp
+    src/common/database.hpp \
+    src/common/text_utils.hpp

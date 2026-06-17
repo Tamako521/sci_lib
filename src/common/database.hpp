@@ -62,7 +62,7 @@ public:
     std::vector<AuthorStat> top_authors(std::size_t limit = 100) const;
     YearKeywordTop yearly_hot_keywords(std::size_t limit = 10) const;
     std::vector<std::pair<std::string, int>> coauthors(const std::string& author) const;
-    std::vector<std::uint64_t> count_cliques_by_order() const;
+    std::vector<std::string> count_cliques_by_order() const;
     std::vector<std::pair<std::string, std::size_t>> author_paper_counts() const;
 
 private:
@@ -99,7 +99,7 @@ private:
     std::vector<AuthorStat> top_author_stats_;
     YearKeywordTop yearly_keywords_;
     std::unordered_map<std::uint32_t, std::vector<format::WeightedNeighbor>> graph_;
-    std::vector<std::uint64_t> clique_counts_;
+    std::vector<std::string> clique_counts_;
 
     mutable std::ifstream articles_;
     mutable std::optional<XmlValue> last_found_;

@@ -72,7 +72,7 @@ bool IndexWriter::write_indexes(
     const std::unordered_map<std::uint32_t, std::uint32_t>& author_counts,
     const std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>>& yearly_word_counts,
     const std::unordered_map<std::uint64_t, std::uint32_t>& edge_weights,
-    const std::vector<std::uint64_t>& clique_counts)
+    const std::vector<BigCount>& clique_counts)
 {
     {
         std::ofstream out(index_dir_ / "string_pool.dat", std::ios::binary);
@@ -173,7 +173,15 @@ bool IndexWriter::write_indexes(
             }
         }
     }
-    format::write_vector_file(index_dir_ / "clique_stats.dat", clique_counts);
+    {
+        // clique_stats.dat: 存储各阶完全子图个数（科学计数法字符串）
+        std::ofstream out(index_dir_ / "clique_stats.dat", std::ios::binary);
+        const auto count = static_cast<std::uint64_t>(clique_counts.size());
+        format::write_pod(out, count);
+        for (const auto& bc : clique_counts) {
+            format::write_string(out, bc.to_string());
+        }
+    }
     return true;
 }
 

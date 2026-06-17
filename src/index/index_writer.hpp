@@ -47,7 +47,7 @@ public:
         const std::unordered_map<std::uint32_t, std::uint32_t>& author_counts,
         const std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>>& yearly_word_counts,
         const std::unordered_map<std::uint64_t, std::uint32_t>& edge_weights,
-        const std::vector<std::uint64_t>& clique_counts);
+        const std::vector<BigCount>& clique_counts);
 
     const std::vector<format::ArticleOffset>& offsets() const;
 

@@ -25,18 +25,24 @@ class SearchEngine {
 public:
     explicit SearchEngine(const Database* db);
 
-    std::vector<SearchResult> search_by_author(const std::string& author) const;
-    std::vector<SearchResult> search_by_title(const std::string& title) const;
+    std::vector<SearchResult> search_by_author(const std::string& author,
+                                              std::size_t limit = 100) const;
+    std::vector<SearchResult> search_by_title(const std::string& title,
+                                              std::size_t limit = 100) const;
     std::vector<SearchResult> search_by_keyword(const std::string& keyword,
-                                                SearchMode mode = SearchMode::FUZZY) const;
+                                                SearchMode mode = SearchMode::FUZZY,
+                                                std::size_t limit = 100) const;
     std::vector<SearchResult> search_by_keywords(const std::vector<std::string>& keywords,
-                                                 bool match_all = false) const;
-    std::vector<SearchResult> smart_search(const std::string& query) const;
+                                                 bool match_all = false,
+                                                 std::size_t limit = 100) const;
+    std::vector<SearchResult> smart_search(const std::string& query,
+                                           std::size_t limit = 100) const;
 
 private:
     std::vector<SearchResult> make_results(const std::vector<std::uint32_t>& ids,
                                            const std::string& type,
-                                           const std::string& matched) const;
+                                           const std::string& matched,
+                                           std::size_t limit) const;
     const Database* db_ = nullptr;
 };
 

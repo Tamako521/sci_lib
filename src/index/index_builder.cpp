@@ -1,8 +1,11 @@
 #include "index/index_builder.hpp"
+#include "common/text_utils.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <queue>
 #include <sstream>
@@ -13,7 +16,8 @@ namespace indexed {
 
 namespace {
 constexpr std::size_t chunk_size = 8 * 1024 * 1024;
-constexpr std::size_t max_clique_order = 7;
+// 需要统计的完全子图最大阶数
+constexpr int max_clique_order = 7;
 
 std::uint64_t edge_key(std::uint32_t a, std::uint32_t b)
 {
@@ -23,14 +27,151 @@ std::uint64_t edge_key(std::uint32_t a, std::uint32_t b)
     return (static_cast<std::uint64_t>(a) << 32) | b;
 }
 
-void saturating_add(std::uint64_t& target, std::uint64_t value)
+
+} // anonymous namespace
+
+// ---- BigCount 128 位精确整数实现 ----
+
+// 128 位除以 10，返回余数（修改自身为商）
+static std::uint64_t div10_128(std::uint64_t& hi, std::uint64_t& lo)
 {
-    if (UINT64_MAX - target < value) {
-        target = UINT64_MAX;
-        return;
+    std::uint64_t rem = 0;
+    // 从最高位逐位处理 hi
+    std::uint64_t q_hi = 0;
+    for (int i = 63; i >= 0; --i) {
+        rem = (rem << 1) | ((hi >> i) & 1);
+        if (rem >= 10) {
+            rem -= 10;
+            q_hi |= (1ULL << i);
+        }
     }
-    target += value;
+    // 处理 lo
+    std::uint64_t q_lo = 0;
+    for (int i = 63; i >= 0; --i) {
+        rem = (rem << 1) | ((lo >> i) & 1);
+        if (rem >= 10) {
+            rem -= 10;
+            q_lo |= (1ULL << i);
+        }
+    }
+    hi = q_hi;
+    lo = q_lo;
+    return rem;
 }
+
+// 128 位 × 10 + digit（digit < 10），32位分片防止中间溢出
+static void mul10_add_128(std::uint64_t& hi, std::uint64_t& lo, std::uint64_t digit)
+{
+    const std::uint64_t lo_low  = lo & 0xFFFFFFFFULL;
+    const std::uint64_t lo_high = lo >> 32;
+    const std::uint64_t hi_low  = hi & 0xFFFFFFFFULL;
+    const std::uint64_t hi_high = hi >> 32;
+
+    const std::uint64_t p0 = lo_low  * 10 + digit;       // < 2^36
+    const std::uint64_t p1 = lo_high * 10 + (p0 >> 32);  // < 2^36
+    const std::uint64_t p2 = hi_low  * 10 + (p1 >> 32);  // < 2^36
+    const std::uint64_t p3 = hi_high * 10 + (p2 >> 32);  // < 2^36
+
+    lo = (p0 & 0xFFFFFFFFULL) | ((p1 & 0xFFFFFFFFULL) << 32);
+    hi = (p2 & 0xFFFFFFFFULL) | ((p3 & 0xFFFFFFFFULL) << 32);
+}
+
+std::string BigCount::to_string() const
+{
+    if (is_zero()) return "0";
+
+    // 128 位转十进制，最多 39 位（2^128 ≈ 3.4e38）
+    char buf[40];
+    int pos = 39;
+    buf[pos] = '\0';
+
+    std::uint64_t h = hi, l = lo;
+    while (h != 0 || l != 0) {
+        std::uint64_t rem = div10_128(h, l);
+        buf[--pos] = static_cast<char>('0' + rem);
+    }
+
+    return std::string(buf + pos);
+}
+
+BigCount BigCount::from_string(const std::string& s)
+{
+    if (s.empty() || s == "0") return BigCount{};
+
+    // 科学计数法格式（兼容旧数据）：解析为 double，再转换为 128 位近似值
+    auto e_pos = s.find('e');
+    {
+        const auto E_pos = s.find('E');
+        if (e_pos == std::string::npos) e_pos = E_pos;
+        else if (E_pos != std::string::npos && E_pos < e_pos) e_pos = E_pos;
+    }
+    if (e_pos == std::string::npos) {
+        // 纯十进制格式
+        std::uint64_t h = 0, l = 0;
+        for (char c : s) {
+            if (c < '0' || c > '9') continue;
+            mul10_add_128(h, l, static_cast<std::uint64_t>(c - '0'));
+        }
+        return BigCount{h, l};
+    }
+
+    // 科学计数法：mantissa e exponent → double → 128 位近似
+    try {
+        const std::string mant_str = s.substr(0, e_pos);
+        const std::string exp_str = s.substr(e_pos + 1);
+        double val = std::stod(mant_str) * std::pow(10.0, std::stoi(exp_str));
+        if (val < 1.0) return BigCount{};
+        if (val >= std::pow(2.0, 128.0)) return BigCount{UINT64_MAX, UINT64_MAX};
+
+        std::uint64_t h = static_cast<std::uint64_t>(val / std::pow(2.0, 64.0));
+        std::uint64_t l = static_cast<std::uint64_t>(std::fmod(val, std::pow(2.0, 64.0)));
+        return BigCount{h, l};
+    } catch (...) {
+        return BigCount{};
+    }
+}
+
+BigCount BigCount::combination(int n, int k)
+{
+    if (k < 0 || k > n) return BigCount{};
+    if (k == 0 || k == n) return BigCount{1ULL};
+    if (k > n - k) k = n - k;
+
+    // n ≤ 50 → C(n,k) ≤ C(50,25) ≈ 1.26e14，安全使用 uint64_t
+    std::uint64_t result = 1;
+    for (int i = 1; i <= k; ++i) {
+        result = result * static_cast<std::uint64_t>(n - k + i)
+               / static_cast<std::uint64_t>(i);
+    }
+    return BigCount{result};
+}
+
+BigCount& BigCount::operator+=(const BigCount& other)
+{
+    if (other.is_zero()) return *this;
+    if (is_zero()) {
+        *this = other;
+        return *this;
+    }
+
+    std::uint64_t sum_lo = lo + other.lo;
+    std::uint64_t carry = (sum_lo < lo) ? 1ULL : 0;
+
+    // 128 位加法，检测溢出
+    std::uint64_t hi_sum = hi + other.hi;
+    bool overflow = (hi_sum < hi);
+    hi_sum += carry;
+    overflow = overflow || (carry && hi_sum == 0);
+
+    if (overflow) {
+        // 饱和为最大值（DBLP 规模不会触发）
+        lo = UINT64_MAX;
+        hi = UINT64_MAX;
+    } else {
+        lo = sum_lo;
+        hi = hi_sum;
+    }
+    return *this;
 }
 
 bool IndexBuilder::build(const std::filesystem::path& xml_path, const std::filesystem::path& index_dir)
@@ -59,19 +200,16 @@ bool IndexBuilder::build(const std::filesystem::path& xml_path, const std::files
         return false;
     }
     writer_.close_articles();
-    std::cout << "开始统计聚团...\n";
+    std::cout << "开始统计聚团(退化排序 + Forward DFS + 批量组合数加速)...\n";
     clique_counts_ = count_cliques_by_order();
-    std::uint64_t total_cliques = 0;
     std::size_t max_order = 0;
     for (std::size_t order = 1; order < clique_counts_.size(); ++order) {
-        saturating_add(total_cliques, clique_counts_[order]);
-        if (clique_counts_[order] > 0) {
+        if (!clique_counts_[order].is_zero()) {
             max_order = order;
         }
     }
     std::cout << "聚团统计完成: max_order=" << max_order
-              << ", max_order_limit=" << max_clique_order
-              << ", total=" << total_cliques << "\n";
+              << " (统计上限阶数=" << max_clique_order << ")\n";
     if (!writer_.write_indexes(pool_,
                                key_entries_,
                                author_string_ids_,
@@ -281,35 +419,12 @@ std::string IndexBuilder::decode_entities(std::string text)
 
 std::string IndexBuilder::normalize(const std::string& value)
 {
-    std::string out;
-    bool last_space = true;
-    for (unsigned char ch : value) {
-        if (std::isspace(ch)) {
-            if (!last_space) out.push_back(' ');
-            last_space = true;
-        } else {
-            out.push_back(static_cast<char>(std::tolower(ch)));
-            last_space = false;
-        }
-    }
-    if (!out.empty() && out.back() == ' ') out.pop_back();
-    return out;
+    return indexed::normalize(value);
 }
 
 std::vector<std::string> IndexBuilder::tokenize(const std::string& text)
 {
-    std::vector<std::string> words;
-    std::string word;
-    for (unsigned char ch : text) {
-        if (std::isalnum(ch)) {
-            word.push_back(static_cast<char>(std::tolower(ch)));
-        } else if (!word.empty()) {
-            words.push_back(word);
-            word.clear();
-        }
-    }
-    if (!word.empty()) words.push_back(word);
-    return words;
+    return indexed::tokenize(text);
 }
 
 bool IndexBuilder::is_stop_word(const std::string& word)
@@ -326,25 +441,33 @@ bool IndexBuilder::is_stop_word(const std::string& word)
 
 std::uint64_t IndexBuilder::stable_hash(const std::string& value)
 {
-    constexpr std::uint64_t offset = 1469598103934665603ull;
-    constexpr std::uint64_t prime = 1099511628211ull;
-    std::uint64_t hash = offset;
-    for (unsigned char ch : value) {
-        hash ^= ch;
-        hash *= prime;
-    }
-    return hash;
+    return indexed::stable_hash(value);
 }
 
-std::vector<std::uint64_t> IndexBuilder::count_cliques_by_order() const
+// ============================================================================
+// 聚团分析：统计各阶完全子图个数
+//
+// 算法: 退化排序 + Forward-neighbor 限深 DFS + 批量组合数加速
+//   1. 退化排序，顶点按 rank 0..N-1 重新编号
+//   2. forward_neighbors[r] = rank > r 且在原图中相邻的顶点（按 rank 排序）
+//   3. forward_sets[r]  = 同上，但是 unordered_set 用于 O(1) 邻接判断
+//   4. DFS 从每个顶点出发，在 forward neighbors 中递归扩展
+//      - 若候选集内所有顶点两两有 forward edge，则它们构成完全子图
+//      → 直接用 C(candidate_count, add) 批量累加各阶子团数量
+//      - 否则逐个顶点加入，递归继续
+//   5. 每个 k-clique 恰好被其 rank 最小的顶点"拥有"，计数恰好一次
+//
+// 内存: 邻接表 + forward_neighbors + forward_sets（数百 MB）
+// ============================================================================
+std::vector<BigCount> IndexBuilder::count_cliques_by_order() const
 {
     const int node_count = static_cast<int>(author_string_ids_.size());
-    std::vector<std::uint64_t> counts(max_clique_order + 1, 0);
-    counts[1] = static_cast<std::uint64_t>(node_count);
-    if (node_count == 0) {
-        return counts;
-    }
+    std::vector<BigCount> counts;
+    counts.resize(static_cast<std::size_t>(max_clique_order) + 1);
 
+    if (node_count == 0) return counts;
+
+    // ---- 构建邻接表（排序去重）----
     std::vector<std::vector<int>> neighbors(static_cast<std::size_t>(node_count));
     for (const auto& [key, weight] : edge_weights_) {
         (void)weight;
@@ -360,103 +483,107 @@ std::vector<std::uint64_t> IndexBuilder::count_cliques_by_order() const
         list.erase(std::unique(list.begin(), list.end()), list.end());
     }
 
+    // ---- 退化排序 (degeneracy ordering) ----
     std::vector<int> order;
     order.reserve(static_cast<std::size_t>(node_count));
     std::vector<int> degree(static_cast<std::size_t>(node_count), 0);
     std::vector<bool> removed(static_cast<std::size_t>(node_count), false);
-    std::priority_queue<
-        std::pair<int, int>,
-        std::vector<std::pair<int, int>>,
-        std::greater<std::pair<int, int>>> queue;
-    for (int index = 0; index < node_count; ++index) {
-        degree[static_cast<std::size_t>(index)] = static_cast<int>(neighbors[static_cast<std::size_t>(index)].size());
-        queue.push({ degree[static_cast<std::size_t>(index)], index });
+
+    using DegreePair = std::pair<int, int>;
+    std::priority_queue<DegreePair, std::vector<DegreePair>, std::greater<DegreePair>> queue;
+    for (int i = 0; i < node_count; ++i) {
+        degree[static_cast<std::size_t>(i)] = static_cast<int>(neighbors[static_cast<std::size_t>(i)].size());
+        queue.push({ degree[static_cast<std::size_t>(i)], i });
     }
 
     while (!queue.empty()) {
-        const auto [current_degree, node] = queue.top();
+        const auto [cur_deg, v] = queue.top();
         queue.pop();
-        if (removed[static_cast<std::size_t>(node)] || current_degree != degree[static_cast<std::size_t>(node)]) {
+        if (removed[static_cast<std::size_t>(v)] || cur_deg != degree[static_cast<std::size_t>(v)])
             continue;
-        }
-        removed[static_cast<std::size_t>(node)] = true;
-        order.push_back(node);
-        for (int neighbor : neighbors[static_cast<std::size_t>(node)]) {
-            if (!removed[static_cast<std::size_t>(neighbor)]) {
-                --degree[static_cast<std::size_t>(neighbor)];
-                queue.push({ degree[static_cast<std::size_t>(neighbor)], neighbor });
+        removed[static_cast<std::size_t>(v)] = true;
+        order.push_back(v);
+        for (int u : neighbors[static_cast<std::size_t>(v)]) {
+            if (!removed[static_cast<std::size_t>(u)]) {
+                --degree[static_cast<std::size_t>(u)];
+                queue.push({ degree[static_cast<std::size_t>(u)], u });
             }
         }
     }
 
+    // rank_of_node[original_id] = rank position
     std::vector<int> rank_of_node(static_cast<std::size_t>(node_count), 0);
-    for (int rank = 0; rank < node_count; ++rank) {
-        rank_of_node[static_cast<std::size_t>(order[static_cast<std::size_t>(rank)])] = rank;
+    for (int r = 0; r < node_count; ++r) {
+        rank_of_node[static_cast<std::size_t>(order[static_cast<std::size_t>(r)])] = r;
     }
 
+    // ---- 构建 forward_neighbors (使用 rank 编号, 而非原始 ID) ----
+    // 对于每个顶点 (按 rank 顺序), 记录其 rank 更大的邻居的 rank
     std::vector<std::vector<int>> forward_neighbors(static_cast<std::size_t>(node_count));
-    for (int rank = 0; rank < node_count; ++rank) {
-        const int original_index = order[static_cast<std::size_t>(rank)];
-        auto& forward = forward_neighbors[static_cast<std::size_t>(rank)];
-        for (int neighbor : neighbors[static_cast<std::size_t>(original_index)]) {
-            const int neighbor_rank = rank_of_node[static_cast<std::size_t>(neighbor)];
-            if (rank < neighbor_rank) {
-                forward.push_back(neighbor_rank);
-            }
+    for (int r = 0; r < node_count; ++r) {
+        const int v = order[static_cast<std::size_t>(r)];
+        auto& fw = forward_neighbors[static_cast<std::size_t>(r)];
+        for (int u : neighbors[static_cast<std::size_t>(v)]) {
+            const int ru = rank_of_node[static_cast<std::size_t>(u)];
+            if (r < ru)  // 只保留 rank > 当前顶点的邻居
+                fw.push_back(ru);
         }
-        std::sort(forward.begin(), forward.end());
+        std::sort(fw.begin(), fw.end());
     }
 
+    // ---- 构建 forward_sets (unordered_set, O(1) 查询) ----
     std::vector<std::unordered_set<int>> forward_sets(static_cast<std::size_t>(node_count));
-    for (int rank = 0; rank < node_count; ++rank) {
-        const auto& forward = forward_neighbors[static_cast<std::size_t>(rank)];
-        forward_sets[static_cast<std::size_t>(rank)].reserve(forward.size());
-        for (int neighbor : forward) {
-            forward_sets[static_cast<std::size_t>(rank)].insert(neighbor);
-        }
+    for (int r = 0; r < node_count; ++r) {
+        const auto& fw = forward_neighbors[static_cast<std::size_t>(r)];
+        auto& fs = forward_sets[static_cast<std::size_t>(r)];
+        fs.reserve(fw.size());
+        for (int neighbor_rank : fw)
+            fs.insert(neighbor_rank);
     }
 
+    // ---- 辅助函数 ----
+    // 单次计数（仅 3–max_clique_order 阶）
     auto add_count = [&](std::size_t order_size) {
-        if (order_size > max_clique_order) {
-            return;
-        }
-        saturating_add(counts[order_size], 1);
+        if (order_size >= 3 && order_size <= max_clique_order)
+            counts[order_size] += BigCount{1ULL};
     };
 
-    auto add_complete_suffix_counts = [&](std::size_t current_size, std::size_t candidate_count) {
-        const std::size_t max_add = std::min(candidate_count, max_clique_order - current_size);
-        for (std::size_t add = 1; add <= max_add; ++add) {
-            const std::size_t order_size = current_size + add;
-            saturating_add(counts[order_size], combination(candidate_count, add));
-        }
-    };
-
-    auto is_complete_candidates = [&](const std::vector<int>& candidates) {
+    // 检查候选集是否构成完全子图（所有顶点两两有 forward edge）
+    auto is_complete = [&](const std::vector<int>& candidates) {
         for (std::size_t i = 0; i < candidates.size(); ++i) {
-            const auto& neighbor_set = forward_sets[static_cast<std::size_t>(candidates[i])];
+            const auto& nbr_set = forward_sets[static_cast<std::size_t>(candidates[i])];
             for (std::size_t j = i + 1; j < candidates.size(); ++j) {
-                if (neighbor_set.find(candidates[j]) == neighbor_set.end()) {
+                if (nbr_set.find(candidates[j]) == nbr_set.end())
                     return false;
-                }
             }
         }
         return true;
     };
 
-    auto intersect_forward = [](const std::vector<int>& candidates,
-                                std::size_t start,
-                                const std::vector<int>& neighbor_list) {
+    // 批量组合数累加：当前团大小 = prefix_size, 候选集有 candidate_count 个顶点且构成完全子图
+    // 从候选集中选 add 个顶点，形成 prefix_size+add 阶的团
+    auto add_complete_suffix = [&](std::size_t prefix_size, std::size_t candidate_count) {
+        const std::size_t start_add = (prefix_size >= 3) ? std::size_t{1}
+                                         : static_cast<std::size_t>(3 - prefix_size);
+        const std::size_t max_add = std::min(candidate_count,
+                                              static_cast<std::size_t>(max_clique_order) - prefix_size);
+        for (std::size_t add = start_add; add <= max_add; ++add) {
+            counts[prefix_size + add] += BigCount::combination(
+                static_cast<int>(candidate_count), static_cast<int>(add));
+        }
+    };
+
+    // 双指针求交集：candidates[start..] ∩ neighbor_list（两者都已排序）
+    auto intersect_fw = [](const std::vector<int>& candidates, std::size_t start,
+                           const std::vector<int>& neighbor_list) {
         std::vector<int> result;
-        std::size_t i = start;
-        std::size_t j = 0;
+        result.reserve(std::min(candidates.size() - start, neighbor_list.size()));
+        std::size_t i = start, j = 0;
         while (i < candidates.size() && j < neighbor_list.size()) {
-            const int candidate = candidates[i];
-            const int neighbor = neighbor_list[j];
-            if (candidate == neighbor) {
-                result.push_back(candidate);
-                ++i;
-                ++j;
-            } else if (candidate < neighbor) {
+            if (candidates[i] == neighbor_list[j]) {
+                result.push_back(candidates[i]);
+                ++i; ++j;
+            } else if (candidates[i] < neighbor_list[j]) {
                 ++i;
             } else {
                 ++j;
@@ -465,53 +592,55 @@ std::vector<std::uint64_t> IndexBuilder::count_cliques_by_order() const
         return result;
     };
 
-    auto dfs = [&](auto&& self, const std::vector<int>& candidates, std::size_t current_size) -> void {
-        if (candidates.empty() || current_size >= max_clique_order) {
+    // ---- DFS 团枚举 ----
+    std::uint64_t progress = 0;
+    const std::uint64_t report_every = 10'000'000;
+
+    std::function<void(const std::vector<int>&, std::size_t)> dfs;
+    dfs = [&](const std::vector<int>& candidates, std::size_t current_size) {
+        if (candidates.empty() || current_size >= max_clique_order)
+            return;
+
+        // 批量加速：若候选集两两相连，直接做组合数跳过大块枚举
+        if (is_complete(candidates)) {
+            add_complete_suffix(current_size, candidates.size());
             return;
         }
-        if (is_complete_candidates(candidates)) {
-            add_complete_suffix_counts(current_size, candidates.size());
-            return;
-        }
+
+        // 逐个扩展
         for (std::size_t i = 0; i < candidates.size(); ++i) {
             const int next = candidates[i];
             add_count(current_size + 1);
-            if (current_size + 1 >= max_clique_order) {
-                continue;
+            if (++progress % report_every == 0) {
+                std::cout << "  已累计 " << progress << " 次扩展 (当前团阶数="
+                          << (current_size + 1) << ")...\n";
             }
 
+            if (current_size + 1 >= max_clique_order)
+                continue;
+
             const std::vector<int> next_candidates =
-                intersect_forward(candidates, i + 1, forward_neighbors[static_cast<std::size_t>(next)]);
-            if (!next_candidates.empty()) {
-                self(self, next_candidates, current_size + 1);
-            }
+                intersect_fw(candidates, i + 1, forward_neighbors[static_cast<std::size_t>(next)]);
+
+            if (!next_candidates.empty())
+                dfs(next_candidates, current_size + 1);
         }
     };
 
-    for (int rank = 0; rank < node_count; ++rank) {
-        dfs(dfs, forward_neighbors[static_cast<std::size_t>(rank)], 1);
+    std::cout << "  开始聚团分析 (max_order=" << static_cast<int>(max_clique_order) << ")\n"
+              << "    节点数=" << node_count
+              << ", 边数=" << edge_weights_.size() << "\n";
+
+    for (int r = 0; r < node_count; ++r) {
+        dfs(forward_neighbors[static_cast<std::size_t>(r)], 1);
     }
 
+    // 1阶/2阶 用精确值覆盖（DFS 中也会统计但这里用常量更高效）
+    counts[1] = BigCount{static_cast<std::uint64_t>(node_count)};
+    counts[2] = BigCount{static_cast<std::uint64_t>(edge_weights_.size())};
+
+    std::cout << "  聚团分析完成，总扩展次数=" << progress << "\n";
     return counts;
-}
-
-std::uint64_t IndexBuilder::combination(std::uint64_t n, std::uint64_t k)
-{
-    if (k > n) {
-        return 0;
-    }
-    if (k > n - k) {
-        k = n - k;
-    }
-
-    unsigned __int128 result = 1;
-    for (std::uint64_t i = 1; i <= k; ++i) {
-        result = (result * (n - k + i)) / i;
-        if (result > UINT64_MAX) {
-            return UINT64_MAX;
-        }
-    }
-    return static_cast<std::uint64_t>(result);
 }
 
 } // namespace indexed

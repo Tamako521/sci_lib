@@ -12,9 +12,9 @@ std::vector<std::pair<std::string, int>> AuthorGraph::queryCoauthors(const std::
     return db_ == nullptr ? std::vector<std::pair<std::string, int>>{} : db_->coauthors(author);
 }
 
-std::vector<std::uint64_t> AuthorGraph::countCliquesByOrder() const
+std::vector<std::string> AuthorGraph::countCliquesByOrder() const
 {
-    return db_ == nullptr ? std::vector<std::uint64_t>{} : db_->count_cliques_by_order();
+    return db_ == nullptr ? std::vector<std::string>{} : db_->count_cliques_by_order();
 }
 
 } // namespace indexed

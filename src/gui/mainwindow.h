@@ -20,6 +20,11 @@
 #include "qcustomplot.h"
 #include <QTableWidget>
 #include <QComboBox>
+#include <QApplication>
+#include <QWheelEvent>
+#include <QDesktopServices>
+#include <QHash>
+#include <QLabel>
 
 #include "analysis/statistics_analyzer.hpp"
 #include "common/database.hpp"
@@ -90,6 +95,7 @@ private:
     QGraphicsView *graphView;     // 视图控件：显示作者合作关系图
     QGraphicsScene *graphScene;   // 场景控件：绘制合作关系图的画布
     QTableWidget *authorDetailTable = nullptr; // 作者合作图右侧详情表
+    QTableWidget *coauthorListTable = nullptr; // 作者合作列表表格（独立 tab）
     QCustomPlot *barChartPlot;    // 柱状图控件：显示论文发表年份统计
 
     // ===================== 全局原始数据 =====================
@@ -98,10 +104,15 @@ private:
     indexed::AuthorGraph m_authorGraph;  // src/graph 作者合作图模块
     std::unique_ptr<indexed::SearchEngine> m_search; // src/search 搜索模块
     QVector<AuthorNode> m_nodes;  // 存储所有作者节点数据
+    QHash<QString, int> m_authorPaperCountMap; // 作者名 -> 发文量，避免搜索时反复遍历所有作者
+    QHash<QString, QString> m_authorCanonicalNameMap; // 小写作者名 -> 原始作者名
 
     // ===================== 临时绘图数据 =====================
     QVector<AuthorNode> m_tempNodes;  // 当前搜索的作者相关节点（绘图用）
     QVector<AuthorEdge> m_tempEdges;  // 当前搜索的作者合作边（绘图用）
+    QVector<AuthorEdge> m_allCoauthorEdges; // 当前中心作者的全部合作边（列表分页用）
+    bool m_graphShowsAllCoauthors = false;
+    int m_coauthorPage = 0;
 
     QTabWidget *searchBottomTab;
     QTableWidget *authorTable = nullptr;
@@ -111,6 +122,11 @@ private:
      QPushButton *btnAuthorDesc;
     QComboBox *keywordYearCombo = nullptr;
     QTableWidget *cliqueTable = nullptr;
+    QLabel *graphSummaryLabel = nullptr;
+    QPushButton *showAllGraphBtn = nullptr;
+    QLabel *coauthorPageLabel = nullptr;
+    QPushButton *coauthorPrevBtn = nullptr;
+    QPushButton *coauthorNextBtn = nullptr;
     // ===================== 核心功能函数 =====================
     // 从dblp.xml文件加载所有论文、作者、合作数据
     void loadDblpXml(const QString &filePath);
@@ -118,6 +134,12 @@ private:
     void filterAuthorData(const QString &targetAuthor);
     // 绘制作者合作关系图
     void drawCooperationGraph();
+    void updateCoauthorListTable(); // 更新作者合作列表 tab 内容
+    void updateCoauthorPaginationControls();
+    void rebuildGraphSubset(bool showAll);
+    void showAllCooperationGraph();
+    int authorPaperCount(const QString& authorName) const;
+    std::vector<std::uint32_t> findCoauthoredPapers(const QString& author1, const QString& author2);
     void showAuthorDetail(const QString& authorName);
     void clearAuthorDetail();
     // 绘制年份统计柱状图
@@ -126,6 +148,12 @@ private:
     void showCliqueStatistics();
 
     void showPaperDetails(const PaperData& paper);
+    // 事件过滤器：处理 Ctrl+滚轮缩放
+    bool eventFilter(QObject *obj, QEvent *event) override;
+    // 双击合作列表查看合作论文
+    void onCoauthorListDoubleClick(int row, int column);
+    // 统一清空关系图（清空数据 + 场景 + 重置视图）
+    void clearGraphView();
 };
 
 // 结束头文件保护

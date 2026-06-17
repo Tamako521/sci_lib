@@ -26,10 +26,10 @@ set(COMMON_SOURCES
 )
 
 set(COMMON_HEADERS
-    src/index/index_format.hpp
     src/common/string_pool.hpp
     src/common/xml_value.hpp
     src/common/database.hpp
+    src/common/text_utils.hpp
 )
 
 # 3. 构建库：同时传入源文件和头文件
@@ -84,12 +84,10 @@ target_include_directories(sci_lib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
 )
-target_compile_definitions(sci_lib PRIVATE
-    LITERATURE_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-)
 target_link_libraries(sci_lib PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::PrintSupport
+    common
     analysis
 )
 

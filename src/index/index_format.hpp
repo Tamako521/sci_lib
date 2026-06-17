@@ -6,7 +6,27 @@
 #include <string>
 #include <vector>
 
-namespace indexed::format {
+namespace indexed {
+
+// 大数：128 位精确整数，用于完全子图统计（最高约 3.4e38）
+// 若溢出则饱和为最大值（对 DBLP 规模不会发生）
+struct BigCount {
+    std::uint64_t lo = 0;  // 低64位
+    std::uint64_t hi = 0;  // 高64位
+
+    BigCount() = default;
+    explicit BigCount(std::uint64_t v) : lo(v), hi(0) {}
+    BigCount(std::uint64_t h, std::uint64_t l) : lo(l), hi(h) {}
+
+    bool is_zero() const { return lo == 0 && hi == 0; }
+
+    std::string to_string() const;
+    static BigCount from_string(const std::string& s);
+    static BigCount combination(int n, int k);
+    BigCount& operator+=(const BigCount& other);
+};
+
+namespace format {
 
 constexpr std::uint32_t invalid_id = UINT32_MAX;
 
@@ -112,3 +132,5 @@ bool read_vector_file(const std::filesystem::path& path, std::vector<T>& values)
 }
 
 } // namespace indexed::format
+
+} // namespace indexed

@@ -1,4 +1,5 @@
 #include "common/database.hpp"
+#include "common/text_utils.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -8,18 +9,6 @@
 namespace indexed {
 
 namespace {
-std::uint64_t stable_hash(const std::string& value)
-{
-    constexpr std::uint64_t offset = 1469598103934665603ull;
-    constexpr std::uint64_t prime = 1099511628211ull;
-    std::uint64_t hash = offset;
-    for (unsigned char ch : value) {
-        hash ^= ch;
-        hash *= prime;
-    }
-    return hash;
-}
-
 template <typename K>
 void load_dir_map(const std::filesystem::path& path, std::unordered_map<K, Database::Dir>& out)
 {
@@ -125,7 +114,9 @@ bool Database::load_lookup_files()
     load_dir_map<std::uint64_t>(index_dir_ / "title_exact_dir.dat", title_exact_dir_);
 
     std::vector<format::PostingDirEntry> word_lookup_entries;
-    format::read_vector_file(index_dir_ / "title_word_lookup.dat", word_lookup_entries);
+    if (!format::read_vector_file(index_dir_ / "title_word_lookup.dat", word_lookup_entries)) {
+        return false;
+    }
     for (const auto& e : word_lookup_entries) {
         title_word_lookup_[normalize(string_pool_.get(e.id))] = static_cast<std::uint32_t>(e.offset);
     }
@@ -199,7 +190,23 @@ bool Database::load_graph()
 
 bool Database::load_clique_stats()
 {
-    return format::read_vector_file(index_dir_ / "clique_stats.dat", clique_counts_);
+    std::ifstream in(index_dir_ / "clique_stats.dat", std::ios::binary);
+    if (!in.is_open()) {
+        return false;
+    }
+    std::uint64_t count = 0;
+    if (!format::read_pod(in, count)) {
+        return false;
+    }
+    clique_counts_.resize(static_cast<std::size_t>(count));
+    for (std::uint64_t i = 0; i < count; ++i) {
+        std::string value;
+        if (!format::read_string(in, value)) {
+            return false;
+        }
+        clique_counts_[static_cast<std::size_t>(i)] = std::move(value);
+    }
+    return true;
 }
 
 std::size_t Database::size() const
@@ -422,10 +429,10 @@ std::vector<std::uint32_t> Database::field_records(const std::string& field, con
 
 std::vector<AuthorStat> Database::top_authors(std::size_t limit) const
 {
-    std::vector<AuthorStat> result = top_author_stats_;
-    if (result.size() > limit) {
-        result.resize(limit);
-    }
+    const std::size_t count = std::min(limit, top_author_stats_.size());
+    std::vector<AuthorStat> result;
+    result.reserve(count);
+    result.insert(result.end(), top_author_stats_.begin(), top_author_stats_.begin() + count);
     return result;
 }
 
@@ -477,49 +484,19 @@ std::vector<std::pair<std::string, std::size_t>> Database::author_paper_counts()
     return result;
 }
 
-std::vector<std::uint64_t> Database::count_cliques_by_order() const
+std::vector<std::string> Database::count_cliques_by_order() const
 {
     return clique_counts_;
 }
 
 std::string Database::normalize(const std::string& value)
 {
-    std::string out;
-    out.reserve(value.size());
-    bool last_space = true;
-    for (unsigned char ch : value) {
-        if (std::isspace(ch)) {
-            if (!last_space) {
-                out.push_back(' ');
-                last_space = true;
-            }
-        } else {
-            out.push_back(static_cast<char>(std::tolower(ch)));
-            last_space = false;
-        }
-    }
-    if (!out.empty() && out.back() == ' ') {
-        out.pop_back();
-    }
-    return out;
+    return indexed::normalize(value);
 }
 
 std::vector<std::string> Database::tokenize(const std::string& text)
 {
-    std::vector<std::string> words;
-    std::string current;
-    for (unsigned char ch : text) {
-        if (std::isalnum(ch)) {
-            current.push_back(static_cast<char>(std::tolower(ch)));
-        } else if (!current.empty()) {
-            words.push_back(current);
-            current.clear();
-        }
-    }
-    if (!current.empty()) {
-        words.push_back(current);
-    }
-    return words;
+    return indexed::tokenize(text);
 }
 
 std::vector<std::uint32_t> Database::intersect_sorted(std::vector<std::uint32_t> left,

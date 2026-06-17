@@ -30,8 +30,7 @@ private:
     static std::vector<std::string> tokenize(const std::string& text);
     static bool is_stop_word(const std::string& word);
     static std::uint64_t stable_hash(const std::string& value);
-    std::vector<std::uint64_t> count_cliques_by_order() const;
-    static std::uint64_t combination(std::uint64_t n, std::uint64_t k);
+    std::vector<BigCount> count_cliques_by_order() const;
 
     std::filesystem::path index_dir_;
     StringPool pool_;
@@ -52,7 +51,7 @@ private:
     std::unordered_map<std::uint32_t, std::uint32_t> author_counts_;
     std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> yearly_word_counts_;
     std::unordered_map<std::uint64_t, std::uint32_t> edge_weights_;
-    std::vector<std::uint64_t> clique_counts_;
+    std::vector<BigCount> clique_counts_;
 };
 
 } // namespace indexed

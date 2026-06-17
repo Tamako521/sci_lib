@@ -6,7 +6,7 @@ CONFIG -= app_bundle
 TARGET = sci_lib
 TEMPLATE = app
 
-DEFINES += LITERATURE_DATA_DIR=\\\"$$PWD\\\"
+QMAKE_LFLAGS += -static-libstdc++
 
 INCLUDEPATH += \
     $$PWD/src \
@@ -30,6 +30,7 @@ HEADERS += \
     src/common/string_pool.hpp \
     src/common/xml_value.hpp \
     src/common/database.hpp \
+    src/common/text_utils.hpp \
     src/analysis/statistics_analyzer.hpp \
     src/search/search_engine.hpp \
     src/graph/AuthorGraph.hpp
